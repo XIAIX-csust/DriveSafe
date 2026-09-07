@@ -142,6 +142,39 @@
 
 ---
 
+## 硬约束：所有改动必须能在 Jetson 开发板上运行
+
+本项目目标平台是 **Jetson（Orin Nano 8G/16G、Orin NX/AGX）**：aarch64 + Ubuntu(L4T) +
+NVIDIA 分发的 PyTorch（`pip install torch --index-url https://developer.download.nvidia.com/compute/redist/jp/v61/pytorch` 等）。
+**A–D 任何一项落地时都必须满足以下红线，缺一不可：**
+
+1. **无 x86-only / 平台专属依赖**：新代码只允许标准库 + 仓库已有依赖
+   （torch/torchvision/transformers/ultralytics/opencv/numpy/scipy/matplotlib/filterpy/pillow/pyyaml）。
+   禁止引入 Windows API（win32/winsound/mss 等）；Linux 端一律走 `shutil.which` + `subprocess` 探测式调用。
+2. **CUDA 特性必须带保护**：`torch.cuda.is_available()` / `device.type != 'cpu'` 分支在前；
+   FP16/TensorRT/多 stream 只作用于 CUDA 路径，CPU 路径保持 FP32 原样（DepthAnything FP16 已加
+   启动自检 + 自动回退 FP32，见 `depth_model.py`）。
+3. **Python ≥ 3.8 语法**：JetPack 5 容器是 python3.8。新增文件需带 `from __future__ import annotations`，
+   提交前跑 `ast.parse(src, feature_version=(3, 8))` 兼容校验（本仓库验证脚本已包含该检查）。
+4. **内存适配 8GB 起步**：Orin Nano 8G 是底线。任何“新增一份模型/缓冲”的改动都要过内存账：
+   模型 FP16 ≤ 400MB、单帧缓冲 ≤ 3 份、Depth worker 队列 ≤ 2 帧；超限必须可配置关闭。
+5. **真机验收才算数**：性能/效果改动以 Jetson 上 `--max-frames 300` 实测为准，
+   `runtime_governor.py` 每 120 帧打印的 FPS/压力就是验收仪表。开发板用
+   `sudo apt install alsa-utils`（语音）、`pip install -r requirements.txt` 后直接可跑，
+   不得依赖桌面 GUI（`--view-img` 只在有显示环境用）。
+6. **A1 双 stream 流水线注意**：用 `torch.cuda.Stream` + 每模型独立 stream（Jetson 支持），
+   禁止依赖多进程 CUDA（Jetson iGPU 上多进程复用模型只会双倍吃内存、kernel 仍分时）；
+   Depth worker 用线程 + 队列实现（仓库 `utils/datasets.py` 已有 ThreadPool 先例）。
+7. **B1 运动补偿注意**：光流用 `cv2.calcOpticalFlowPyrLK`（opencv 自带、aarch64 可用），
+   特征点数 ≤ 200、目标级 patch warp；不可用依赖 CUDA 光流插件的实现。
+8. **C1 ByteTrack 注意**：选纯 numpy/PyTorch 实现（如 `mikel-brostrom/yolo_tracking` 风格），
+   不自带需要编译的 Cython/`lap` 扩展；本项目依赖清单里 `lapx` 如遇 aarch64 无轮子需替换为 `scipy` 解算。
+
+> 结论：**“能在开发板跑”不是事后验证，而是每一项的实现前提**。每完成一个里程碑，
+> 先在 Orin Nano 8G 上跑通 `detect_3d_with_surface.py --max-frames 300`，再谈合并。
+
+---
+
 ## 与 RuntimeGovernor 的最终关系
 
 ```

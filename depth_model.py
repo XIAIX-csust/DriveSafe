@@ -85,6 +85,22 @@ class DepthEstimator:
             self.half = False
             self.pipe = pipeline(task="depth-estimation", model=model_name, device=self.pipe_device)
             print(f"Loaded Depth Anything v2 {model_size} model on CPU (fallback)")
+
+        # Jetson 兼容自检：个别 CUDA 驱动对 FP16 ViT 推理不兼容。
+        # 启动时用小图试跑一次，失败自动回退 FP32，避免运行到一半才崩溃。
+        if self.half and self.pipe_device != 'cpu':
+            try:
+                probe = Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8))
+                self.pipe(probe)
+                print("Depth Anything FP16 self-check passed")
+            except Exception as exc:
+                print(f"Depth Anything FP16 self-check failed ({exc}); reloading in FP32")
+                self.half = False
+                try:
+                    self.pipe = pipeline(task="depth-estimation", model=model_name, device=self.pipe_device)
+                    print("Depth Anything reloaded in FP32")
+                except Exception as exc2:
+                    print(f"Depth Anything FP32 reload also failed ({exc2})")
     
     def estimate_depth(self, image):
         """
