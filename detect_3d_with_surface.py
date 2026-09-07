@@ -43,6 +43,7 @@ from road_surface_fusion import (
 )
 from risk_alerts.sound_processing.alerter import RiskSoundAlerter
 from risk_alerts.warning_prompt import draw_chinese_risk_prompt
+from runtime_governor import RuntimeGovernor
 
 import sys
 sys.path.insert(0, './yolov10')
@@ -325,6 +326,15 @@ def detect(save_img=False, callback=None):
     (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)
     structured_writer = None
     sound_alerter = RiskSoundAlerter()
+    governor = RuntimeGovernor(
+        target_fps=getattr(opt, 'target_fps', None),
+        depth_strategy=getattr(opt, 'depth_strategy', None),
+        road_strategy=getattr(opt, 'road_strategy', None),
+        reid_strategy=getattr(opt, 'reid_strategy', None),
+        bev_strategy=getattr(opt, 'bev_strategy', None),
+    )
+    last_risk_img = None  # BEV 抽帧渲染时复用上一帧画面
+    road_first_run = True  # 首帧强制跑一次路面模型，之后交给 Governor
     if opt.save_jsonl:
         structured_writer = StructuredOutputWriter(save_dir / opt.structured_dir)
         print(f"Structured output will be saved to {structured_writer.output_path}")
@@ -467,6 +477,7 @@ def detect(save_img=False, callback=None):
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         if opt.max_frames is not None and frame_idx >= opt.max_frames:
             break
+        loop_t0 = time.time()
 
         # 图像预处理
         img = torch.from_numpy(img).to(device)
@@ -487,18 +498,28 @@ def detect(save_img=False, callback=None):
         if classify:
             pred = apply_classifier(pred, modelc, img, im0s)
 
-        # === 深度估计 (每一帧做一次) ===
+        # === 深度估计 (Governor 动态调控：负载高时隔帧/降采样，帧间复用深度图) ===
         # 注意：im0s 可能是列表（多摄像头）或单张图
         # 这里假设是单张图处理，如果是多路视频可能需要遍历
         curr_im0_depth = im0s.copy() if not webcam else im0s[0].copy()
-        
-        # 性能优化：如果显存紧张，可以隔帧运行深度估计
-        # 目前每帧都跑
-        depth_map = depth_estimator.estimate_depth(curr_im0_depth)
-        road_main_results, road_aux_results, road_model_label = road_detector.detect(
-            curr_im0_depth,
-            conf_thres=opt.road_conf_thres,
-        )
+
+        depth_estimator.input_scale = governor.depth_input_scale()
+        if governor.should_run_depth() or depth_estimator.last_depth_map is None:
+            depth_map = depth_estimator.estimate_depth(curr_im0_depth)
+        else:
+            depth_map = depth_estimator.last_depth_map
+
+        if governor.should_run_road() or road_first_run:
+            road_first_run = False
+            road_main_results, road_aux_results, road_model_label = road_detector.detect(
+                curr_im0_depth,
+                conf_thres=opt.road_conf_thres,
+                skip_frame_check=True,
+            )
+        else:
+            road_main_results = road_detector.last_results
+            road_aux_results = road_detector.last_aux_results
+            road_model_label = road_detector.last_model_label
         surface_analysis = road_analyzer.analyze(
             curr_im0_depth,
             depth_map,
@@ -574,8 +595,12 @@ def detect(save_img=False, callback=None):
                 confss = torch.Tensor(confs)
                 classes = torch.Tensor(classes_list)
 
-                # DeepSort跟踪 (传入 3D 数据以启用 3D 欧氏距离匹配)
-                outputs = deepsort.update(xywhs, confss, im0, classes, bbox_3d=bbox_3d_list)
+                # DeepSort跟踪 (传入 3D 数据以启用 3D 欧氏距离匹配；负载高时按 Governor 复用特征)
+                outputs = deepsort.update(
+                    xywhs, confss, im0, classes,
+                    bbox_3d=bbox_3d_list,
+                    extract_reid=governor.should_run_reid(),
+                )
 
                 # 过滤有效车辆类型（bicycle, car, motorcycle, bus, truck）
                 valid_classes = {0, 1, 2, 3, 5, 7}
@@ -775,12 +800,13 @@ def detect(save_img=False, callback=None):
 
                 # Stage 4: BEV Generation (Demo Mode)
                 # Always generate BEV even if no sources, to show empty grid
+                render_bev = governor.should_render_bev()
                 
                 # Update Dynamic Zoom
                 bev_visualizer.update_scale(max_dist_m)
                 bev_visualizer.reset()
                 
-                if len(risk_sources) > 0:
+                if render_bev and len(risk_sources) > 0:
                     # 1. Draw Trajectories & Future Sectors (Background)
                     for src in risk_sources:
                         # Trajectory Fading
@@ -824,18 +850,25 @@ def detect(save_img=False, callback=None):
                                  f.write(f"Frame: {frame}, ID: {src['id']}, Type: {src['type']}, X: {src['x']:.2f}, Z: {src['z']:.2f}, Speed: {src['speed']:.2f}, SCF: {src.get('scf', 0):.4f}, Avg_SCF: {avg_scf:.4f}\n")
                     except Exception as e:
                         print(f"Error writing log: {e}")
-                else:
+                elif render_bev:
                     if np.max(vis_risk_map) > 0:
                         bev_visualizer.draw_risk_heatmap(cv2.flip(vis_risk_map, 0))
                     road_visualizer.draw_on_bev(bev_visualizer, surface_analysis)
                     bev_visualizer.draw_hud(max_scf, max_risk_id, ego_speed=ego_v_z*3.6)
                 
-                # Get Image
-                risk_img = bev_visualizer.get_image()
-                
-                # Resize
-                if risk_img.shape[0] != target_h or risk_img.shape[1] != target_w:
-                    risk_img = cv2.resize(risk_img, (target_w, target_h))
+                if render_bev:
+                    # Get Image
+                    risk_img = bev_visualizer.get_image()
+                    
+                    # Resize
+                    if risk_img.shape[0] != target_h or risk_img.shape[1] != target_w:
+                        risk_img = cv2.resize(risk_img, (target_w, target_h))
+                    last_risk_img = risk_img
+                else:
+                    # 抽帧渲染：跳过帧复用上一帧 BEV，省掉 matplotlib 开销
+                    risk_img = last_risk_img
+                    if risk_img is not None and (risk_img.shape[0] != target_h or risk_img.shape[1] != target_w):
+                        risk_img = cv2.resize(risk_img, (target_w, target_h))
 
 
 
@@ -868,15 +901,21 @@ def detect(save_img=False, callback=None):
                     if hazard.z_m > max_dist_m:
                         max_dist_m = hazard.z_m
 
-                bev_visualizer.update_scale(max_dist_m)
-                bev_visualizer.reset()
-                if np.max(vis_risk_map) > 0:
-                    bev_visualizer.draw_risk_heatmap(cv2.flip(vis_risk_map, 0))
-                road_visualizer.draw_on_bev(bev_visualizer, surface_analysis)
-                bev_visualizer.draw_hud(combined_risk, max_risk_id, ego_speed=ego_v_z*3.6)
-                risk_img = bev_visualizer.get_image()
-                if risk_img.shape[0] != target_h or risk_img.shape[1] != target_w:
-                    risk_img = cv2.resize(risk_img, (target_w, target_h))
+                if governor.should_render_bev():
+                    bev_visualizer.update_scale(max_dist_m)
+                    bev_visualizer.reset()
+                    if np.max(vis_risk_map) > 0:
+                        bev_visualizer.draw_risk_heatmap(cv2.flip(vis_risk_map, 0))
+                    road_visualizer.draw_on_bev(bev_visualizer, surface_analysis)
+                    bev_visualizer.draw_hud(combined_risk, max_risk_id, ego_speed=ego_v_z*3.6)
+                    risk_img = bev_visualizer.get_image()
+                    if risk_img.shape[0] != target_h or risk_img.shape[1] != target_w:
+                        risk_img = cv2.resize(risk_img, (target_w, target_h))
+                    last_risk_img = risk_img
+                else:
+                    risk_img = last_risk_img
+                    if risk_img is not None and (risk_img.shape[0] != target_h or risk_img.shape[1] != target_w):
+                        risk_img = cv2.resize(risk_img, (target_w, target_h))
 
             im0 = road_visualizer.draw_on_frame(im0, surface_analysis)
             im0 = draw_chinese_risk_prompt(im0, decision_status)
@@ -950,6 +989,9 @@ def detect(save_img=False, callback=None):
         current_centers = {src['id']: (src['x'], src['z']) for src in risk_sources}
         prev_centers = current_centers
 
+        # 记录本帧耗时给 Governor（只算推理，不含显示/保存）
+        governor.tick(time.time() - loop_t0)
+
     if structured_writer is not None:
         structured_writer.close()
 
@@ -994,6 +1036,17 @@ if __name__ == '__main__':
     parser.add_argument('--save-jsonl', dest='save_jsonl', action='store_true', help='enable per-frame structured jsonl export')
     parser.add_argument('--no-save-jsonl', dest='save_jsonl', action='store_false', help='disable per-frame structured jsonl export')
     parser.add_argument('--structured-dir', type=str, default='structured', help='structured output subdirectory name')
+    # ── 运行时负载调度（RuntimeGovernor）──
+    parser.add_argument('--target-fps', type=float, default=None,
+                        help='期望最低 FPS（缺省 15，可用环境变量 DRIVESAFE_TARGET_FPS 覆盖）')
+    parser.add_argument('--depth-strategy', choices=['auto', 'always', 'off'], default='auto',
+                        help='深度估计策略：auto=按负载动态隔帧/降采样；always=每帧；off=关闭')
+    parser.add_argument('--road-strategy', choices=['auto', 'always', 'off'], default='auto',
+                        help='路面双模型策略：auto=按负载降频；always=每帧；off=复用上次结果')
+    parser.add_argument('--reid-strategy', choices=['auto', 'always', 'off'], default='auto',
+                        help='DeepSort REID 特征策略：auto=负载高时按 IoU 复用上帧特征')
+    parser.add_argument('--bev-strategy', choices=['auto', 'always', 'off'], default='auto',
+                        help='BEV 热力图渲染策略：auto=负载高时抽帧渲染')
     opt = parser.parse_args()
     print(opt)
     check_requirements('requirements_common.txt', exclude=('pycocotools', 'thop'))

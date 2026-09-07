@@ -33,6 +33,7 @@ from collections import defaultdict
 from depth_model import DepthEstimator
 from bbox3d_utils import BBox3DEstimator, BirdEyeView
 from risk_field import RiskFieldEngine
+from runtime_governor import RuntimeGovernor
 
 import sys
 
@@ -390,6 +391,16 @@ def detect(save_img=False, callback=None):
 
     bbox3d_estimator = BBox3DEstimator(camera_matrix=K)
 
+    # 运行时负载调度：按实测 FPS 动态决定深度/REID/BEV 是否本帧执行
+    governor = RuntimeGovernor(
+        target_fps=getattr(opt, 'target_fps', None),
+        depth_strategy=getattr(opt, 'depth_strategy', None),
+        road_strategy=getattr(opt, 'road_strategy', None),
+        reid_strategy=getattr(opt, 'reid_strategy', None),
+        bev_strategy=getattr(opt, 'bev_strategy', None),
+    )
+    last_risk_img = None  # BEV 抽帧渲染时复用上一帧画面
+
     half = device.type != 'cpu'
     model = attempt_load(weights, map_location=device)
     stride = int(model.stride.max())
@@ -455,6 +466,8 @@ def detect(save_img=False, callback=None):
 
     # 遍历视频帧
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
+        loop_t0 = time.time()
+
         # 图像预处理
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()
@@ -474,14 +487,16 @@ def detect(save_img=False, callback=None):
         if classify:
             pred = apply_classifier(pred, modelc, img, im0s)
 
-        # === 深度估计 (每一帧做一次) ===
+        # === 深度估计 (Governor 动态调控：负载高时隔帧/降采样，帧间复用深度图) ===
         # 注意：im0s 可能是列表（多摄像头）或单张图
         # 这里假设是单张图处理，如果是多路视频可能需要遍历
         curr_im0_depth = im0s.copy() if not webcam else im0s[0].copy()
 
-        # 性能优化：如果显存紧张，可以隔帧运行深度估计
-        # 目前每帧都跑
-        depth_map = depth_estimator.estimate_depth(curr_im0_depth)
+        depth_estimator.input_scale = governor.depth_input_scale()
+        if governor.should_run_depth() or depth_estimator.last_depth_map is None:
+            depth_map = depth_estimator.estimate_depth(curr_im0_depth)
+        else:
+            depth_map = depth_estimator.last_depth_map
         # ============================
 
         # 处理检测结果
@@ -498,6 +513,7 @@ def detect(save_img=False, callback=None):
 
             current_frame_distances = {}
             risk_sources = []  # 存储当前帧风险源（含ID）
+            risk_img = None  # 无检测/未渲染帧时兜底（避免 NameError）
 
             if det is not None and len(det):
                 # 调整检测框到原图尺寸
@@ -542,8 +558,12 @@ def detect(save_img=False, callback=None):
                 confss = torch.Tensor(confs)
                 classes = torch.Tensor(classes_list)
 
-                # DeepSort跟踪 (传入 3D 数据以启用 3D 欧氏距离匹配)
-                outputs = deepsort.update(xywhs, confss, im0, classes, bbox_3d=bbox_3d_list)
+                # DeepSort跟踪 (传入 3D 数据以启用 3D 欧氏距离匹配；负载高时按 Governor 复用特征)
+                outputs = deepsort.update(
+                    xywhs, confss, im0, classes,
+                    bbox_3d=bbox_3d_list,
+                    extract_reid=governor.should_run_reid(),
+                )
 
                 # 过滤有效车辆类型（bicycle, car, motorcycle, bus, truck）
                 valid_classes = {1, 2, 3, 5, 7}
@@ -715,12 +735,13 @@ def detect(save_img=False, callback=None):
 
                 # Stage 4: BEV Generation (Demo Mode)
                 # Always generate BEV even if no sources, to show empty grid
+                render_bev = governor.should_render_bev()
 
                 # Update Dynamic Zoom
                 bev_visualizer.update_scale(max_dist_m)
                 bev_visualizer.reset()
 
-                if len(risk_sources) > 0:
+                if render_bev and len(risk_sources) > 0:
                     # 1. Draw Trajectories & Future Sectors (Background)
                     for src in risk_sources:
                         # Trajectory Fading
@@ -765,12 +786,19 @@ def detect(save_img=False, callback=None):
                     except Exception as e:
                         print(f"Error writing log: {e}")
 
-                # Get Image
-                risk_img = bev_visualizer.get_image()
+                if render_bev:
+                    # Get Image
+                    risk_img = bev_visualizer.get_image()
 
-                # Resize
-                if risk_img.shape[0] != target_h or risk_img.shape[1] != target_w:
-                    risk_img = cv2.resize(risk_img, (target_w, target_h))
+                    # Resize
+                    if risk_img.shape[0] != target_h or risk_img.shape[1] != target_w:
+                        risk_img = cv2.resize(risk_img, (target_w, target_h))
+                    last_risk_img = risk_img
+                else:
+                    # 抽帧渲染：跳过帧复用上一帧 BEV，省掉 matplotlib 开销
+                    risk_img = last_risk_img
+                    if risk_img is not None and (risk_img.shape[0] != target_h or risk_img.shape[1] != target_w):
+                        risk_img = cv2.resize(risk_img, (target_w, target_h))
 
             # 打印耗时
             print(f'{s}Done. ({t2 - t1:.3f}s)')
@@ -819,6 +847,9 @@ def detect(save_img=False, callback=None):
         current_centers = {src['id']: (src['x'], src['z']) for src in risk_sources}
         prev_centers = current_centers
 
+        # 记录本帧耗时给 Governor（只算推理，不含显示/保存）
+        governor.tick(time.time() - loop_t0)
+
     # 保存信息
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
@@ -848,6 +879,17 @@ if __name__ == '__main__':
     parser.add_argument('--name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument("--config_deepsort", type=str, default="deep_sort/configs/deep_sort.yaml")
+    # ── 运行时负载调度（RuntimeGovernor）──
+    parser.add_argument('--target-fps', type=float, default=None,
+                        help='期望最低 FPS（缺省 15，可用环境变量 DRIVESAFE_TARGET_FPS 覆盖）')
+    parser.add_argument('--depth-strategy', choices=['auto', 'always', 'off'], default='auto',
+                        help='深度估计策略：auto=按负载动态隔帧/降采样；always=每帧；off=关闭')
+    parser.add_argument('--road-strategy', choices=['auto', 'always', 'off'], default='auto',
+                        help='路面双模型策略（本入口未使用路面模型，仅为统一参数）')
+    parser.add_argument('--reid-strategy', choices=['auto', 'always', 'off'], default='auto',
+                        help='DeepSort REID 特征策略：auto=负载高时按 IoU 复用上帧特征')
+    parser.add_argument('--bev-strategy', choices=['auto', 'always', 'off'], default='auto',
+                        help='BEV 热力图渲染策略：auto=负载高时抽帧渲染')
     opt = parser.parse_args()
     print(opt)
     check_requirements(exclude=('pycocotools', 'thop'))

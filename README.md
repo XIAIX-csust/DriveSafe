@@ -162,6 +162,22 @@ streamlit run app.py
 
 > 需要 GPU 加速时，先安装 CUDA 版 PyTorch，再 `pip install -r requirements_gpu.txt`。
 
+### 低算力设备 / Jetson 上的性能模式
+
+同时跑 YOLO + DepthAnything + DeepSort + 路面模型对算力要求高，项目内置了**运行时负载调度器**
+(`runtime_governor.py`)：系统实时测量 FPS，与目标帧率比较后，自动对**深度估计、路面模型、DeepSort
+REID 特征、BEV 热力图**做降频/降采样/复用，保住流畅度，行为完全可以在运行时调节：
+
+```bash
+python detect_3d_with_surface.py --source lanechange.mp4 \
+    --target-fps 15 \
+    --depth-strategy auto --road-strategy auto --reid-strategy auto --bev-strategy auto
+```
+
+也可用环境变量：`DRIVESAFE_TARGET_FPS`、`DRIVESAFE_DEPTH_STRATEGY` 等。语音警告在
+Linux/Jetson 上自动使用 `aplay/paplay` 等播放已有 wav（无需 TTS，`sudo apt install alsa-utils`）。
+板卡选型与优化细节见 `docs/Jetson性能优化与硬件选型.md`。
+
 ---
 
 ## 详细安装

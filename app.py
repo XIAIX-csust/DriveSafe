@@ -40,6 +40,12 @@ class DummyOpt:
         self.max_frames = None
         self.save_jsonl = False
         self.structured_dir = 'structured'
+        # 运行时负载调度参数（auto/always/off）
+        self.target_fps = None
+        self.depth_strategy = 'auto'
+        self.road_strategy = 'auto'
+        self.reid_strategy = 'auto'
+        self.bev_strategy = 'auto'
 
 import detect_3d_with_surface as detect_3d
 detect_3d.opt = DummyOpt()

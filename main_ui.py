@@ -31,6 +31,12 @@ class DummyOpt:
         self.exist_ok = False
         self.config_deepsort = 'deep_sort/configs/deep_sort.yaml'
         self.show_img = False
+        # 运行时负载调度参数（auto/always/off）
+        self.target_fps = None
+        self.depth_strategy = 'auto'
+        self.road_strategy = 'auto'
+        self.reid_strategy = 'auto'
+        self.bev_strategy = 'auto'
 
 import detect_3d
 # 注入 opt

@@ -23,10 +23,14 @@ class DeepSort(object):
         metric = NearestNeighborDistanceMetric("cosine", max_cosine_distance, nn_budget)
         self.tracker = Tracker(metric, max_iou_distance=max_iou_distance, max_age=max_age, n_init=n_init)
 
-    def update(self, bbox_xywh, confidences, ori_img, classes, bbox_3d=None):
+        # REID 特征缓存：Governor 判定高负载时可跳过本帧重算，按 IoU 复用上一帧特征
+        self._cached_boxes = []          # list of xywh (np.float)
+        self._cached_features = np.array([])
+
+    def update(self, bbox_xywh, confidences, ori_img, classes, bbox_3d=None, extract_reid=True):
         self.height, self.width = ori_img.shape[:2]
         # generate detections
-        features = self._get_features(bbox_xywh, ori_img)
+        features = self._get_features(bbox_xywh, ori_img, extract_reid=extract_reid)
         bbox_tlwh = self._xywh_to_tlwh(bbox_xywh)
         
         detections = []
@@ -107,16 +111,73 @@ class DeepSort(object):
         h = int(y2-y1)
         return t,l,w,h
     
-    def _get_features(self, bbox_xywh, ori_img):
+    def _get_features(self, bbox_xywh, ori_img, extract_reid=True):
         im_crops = []
         for box in bbox_xywh:
             x1,y1,x2,y2 = self._xywh_to_xyxy(box)
             im = ori_img[y1:y2,x1:x2]
             im_crops.append(im)
-        if im_crops:
+        if not im_crops:
+            return np.array([])
+
+        if extract_reid or not self._cached_features.size:
             features = self.extractor(im_crops)
         else:
-            features = np.array([])
+            # 高负载：复用上一帧已算好的特征，只有大位移/新目标才重算
+            features = self._reuse_or_compute_features(bbox_xywh, im_crops)
+
+        # 更新缓存（与输入框顺序一一对应）
+        self._cached_boxes = [np.asarray(b, dtype=float).reshape(-1) for b in bbox_xywh]
+        self._cached_features = features
         return features
+
+    def _reuse_or_compute_features(self, bbox_xywh, im_crops):
+        cached_boxes = self._cached_boxes
+        if not cached_boxes or self._cached_features.size == 0:
+            return self.extractor(im_crops)
+
+        n = len(bbox_xywh)
+        out = np.zeros((n, self._cached_features.shape[1]), dtype=self._cached_features.dtype)
+        used = set()
+        needs = []
+        for i, box in enumerate(bbox_xywh):
+            bx = np.asarray(box, dtype=float).reshape(-1)
+            best_j, best_iou = -1, 0.35
+            for j, cb in enumerate(cached_boxes):
+                if j in used:
+                    continue
+                iou = self._iou_xywh(bx, cb)
+                if iou > best_iou:
+                    best_iou, best_j = iou, j
+            if best_j >= 0:
+                out[i] = self._cached_features[best_j]
+                used.add(best_j)
+            else:
+                needs.append(i)
+
+        if needs:
+            crops = [im_crops[i] for i in needs]
+            feats = self.extractor(crops)
+            for k, i in enumerate(needs):
+                out[i] = feats[k]
+        return out
+
+    @staticmethod
+    def _iou_xywh(a, b):
+        a = np.asarray(a, dtype=float).reshape(-1)
+        b = np.asarray(b, dtype=float).reshape(-1)
+        ax1, ay1 = a[0] - a[2] / 2.0, a[1] - a[3] / 2.0
+        ax2, ay2 = a[0] + a[2] / 2.0, a[1] + a[3] / 2.0
+        bx1, by1 = b[0] - b[2] / 2.0, b[1] - b[3] / 2.0
+        bx2, by2 = b[0] + b[2] / 2.0, b[1] + b[3] / 2.0
+        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+        iw, ih = ix2 - ix1, iy2 - iy1
+        if iw <= 0 or ih <= 0:
+            return 0.0
+        inter = iw * ih
+        area_a = max(a[2] * a[3], 1e-6)
+        area_b = max(b[2] * b[3], 1e-6)
+        return inter / (area_a + area_b - inter)
 
 

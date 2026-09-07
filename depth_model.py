@@ -11,13 +11,16 @@ class DepthEstimator:
     """
     Depth estimation using Depth Anything v2
     """
-    def __init__(self, model_size='small', device=None):
+    def __init__(self, model_size='small', device=None, half=None, input_scale=1.0):
         """
         Initialize the depth estimator
         
         Args:
             model_size (str): Model size ('small', 'base', 'large')
             device (str): Device to run inference on ('cuda', 'cpu', 'mps')
+            half (bool, optional): Use FP16 inference on CUDA (默认: CUDA 时开启)
+            input_scale (float, optional): 输入图降采样比例 0.25~1.0，
+                由 RuntimeGovernor 在负载高时自动调低（CPU 侧预处理节省 + GPU 端省带宽）
         """
         # Determine device
         if device is None:
@@ -50,18 +53,36 @@ class DepthEstimator:
         }
         
         model_name = model_map.get(model_size.lower(), model_map['small'])
-        
+
+        # FP16（Jetson 上收益明显；不支持时自动回退 FP32）
+        self.half = False
+        if half is None:
+            half = (self.pipe_device == 'cuda')
+        if half and self.pipe_device != 'cpu':
+            model_kwargs = {"torch_dtype": torch.float16}
+        else:
+            model_kwargs = {}
+
+        # 输入降采样（运行时负载高时由 Governor 调低）
+        self.input_scale = max(0.25, min(float(input_scale if input_scale and input_scale > 0 else 1.0), 1.0))
+
+        # 最近一帧深度图缓存（Governor 跳过本帧估算时直接复用）
+        self.last_depth_map = None
+
         # Create pipeline
         # Note: transformers pipeline handles device placement
-        # For FP16 optimization, one could add torch_dtype=torch.float16 if device supports it
         try:
-            self.pipe = pipeline(task="depth-estimation", model=model_name, device=self.pipe_device)
-            print(f"Loaded Depth Anything v2 {model_size} model on {self.pipe_device}")
+            self.pipe = pipeline(task="depth-estimation", model=model_name,
+                                 device=self.pipe_device, model_kwargs=model_kwargs)
+            self.half = bool(model_kwargs)
+            print(f"Loaded Depth Anything v2 {model_size} model on {self.pipe_device}"
+                  f"{' (FP16)' if self.half else ''}")
         except Exception as e:
             # Fallback to CPU if there are issues
             print(f"Error loading model on {self.pipe_device}: {e}")
             print("Falling back to CPU for depth estimation")
             self.pipe_device = 'cpu'
+            self.half = False
             self.pipe = pipeline(task="depth-estimation", model=model_name, device=self.pipe_device)
             print(f"Loaded Depth Anything v2 {model_size} model on CPU (fallback)")
     
@@ -75,6 +96,14 @@ class DepthEstimator:
         Returns:
             numpy.ndarray: Depth map (normalized to 0-1)
         """
+        original_h, original_w = image.shape[:2]
+
+        # 负载高时对输入降采样（由 RuntimeGovernor.depth_input_scale() 给出比例）
+        if self.input_scale < 1.0:
+            small_w = max(64, int(original_w * self.input_scale))
+            small_h = max(64, int(original_h * self.input_scale))
+            image = cv2.resize(image, (small_w, small_h), interpolation=cv2.INTER_AREA)
+
         # Convert BGR to RGB
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         

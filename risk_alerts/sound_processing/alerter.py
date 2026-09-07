@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Optional
@@ -40,6 +42,8 @@ class RiskSoundAlerter:
         self._last_alert: Optional[str] = None
         self._warned_keys: set[str] = set()
         self._winsound = None
+        self._player_cmd: Optional[tuple] = None  # (backend名, 可执行文件路径)
+        self._pygame_mixer = None
 
         if self.enabled and os.name == "nt":
             try:
@@ -49,7 +53,7 @@ class RiskSoundAlerter:
             except Exception as exc:
                 self._warn_once("winsound", f"[risk-sound-alert] winsound unavailable: {exc}")
         elif self.enabled:
-            self._warn_once("platform", "[risk-sound-alert] sound alerts require Windows winsound")
+            self._init_linux_player()
 
     def handle_frame_record(self, frame_record: dict) -> None:
         if not self.enabled:
@@ -123,25 +127,78 @@ class RiskSoundAlerter:
         current_priority = _ALERT_PRIORITY[alert]
         return current_priority > last_priority
 
-    def _play(self, alert: str) -> bool:
-        if self._winsound is None:
-            return False
+    def _init_linux_player(self) -> None:
+        """Linux/Jetson：按优先级探测可用的命令行音频播放器。"""
+        for kind in ("paplay", "aplay", "pw-play", "ffplay"):
+            exe = shutil.which(kind)
+            if exe:
+                self._player_cmd = (kind, exe)
+                return
 
+        # 兜底：pygame.mixer（pip install pygame）
+        try:
+            import pygame
+
+            pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
+            self._pygame_mixer = pygame.mixer
+        except Exception as exc:
+            self._warn_once(
+                "linux-player",
+                "[risk-sound-alert] no audio backend on Linux: install alsa-utils "
+                "(aplay) or pipewire/pulseaudio (paplay), or pip install pygame. "
+                f"details: {exc}",
+            )
+
+    def _play(self, alert: str) -> bool:
         sound_file = _ALERT_SOUND_FILES[alert]
         sound_path = self.sounds_dir / sound_file
         if not sound_path.is_file():
             self._warn_once(str(sound_path), f"[risk-sound-alert] missing sound file: {sound_path}")
             return False
 
-        try:
-            self._winsound.PlaySound(
-                str(sound_path),
-                self._winsound.SND_FILENAME | self._winsound.SND_ASYNC,
-            )
-            return True
-        except Exception as exc:
-            self._warn_once(f"play:{alert}", f"[risk-sound-alert] failed to play {sound_path}: {exc}")
-            return False
+        # Windows：winsound（异步，不阻塞主循环）
+        if self._winsound is not None:
+            try:
+                self._winsound.PlaySound(
+                    str(sound_path),
+                    self._winsound.SND_FILENAME | self._winsound.SND_ASYNC,
+                )
+                return True
+            except Exception as exc:
+                self._warn_once(f"play:{alert}", f"[risk-sound-alert] failed to play {sound_path}: {exc}")
+                return False
+
+        # Linux/Jetson：命令行播放器（非阻塞子进程，不阻塞推理主循环）
+        if self._player_cmd is not None:
+            kind, exe = self._player_cmd
+            args = [exe]
+            if kind == "aplay":
+                args += ["-q", str(sound_path)]
+            elif kind == "paplay":
+                args += [str(sound_path)]
+            elif kind == "pw-play":
+                args += [str(sound_path)]
+            elif kind == "ffplay":
+                args += ["-nodisp", "-autoexit", "-loglevel", "quiet", str(sound_path)]
+            try:
+                subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except Exception as exc:
+                self._warn_once(f"play:{alert}", f"[risk-sound-alert] failed to spawn {kind}: {exc}")
+                return False
+
+        # Linux 兜底：pygame.mixer（非阻塞）
+        if self._pygame_mixer is not None:
+            try:
+                sound_obj = self._pygame_mixer.Sound(str(sound_path))
+                sound_obj.play()
+                return True
+            except Exception as exc:
+                self._warn_once(f"play:{alert}", f"[risk-sound-alert] pygame play failed: {exc}")
+                return False
+
+        self._warn_once("no-backend", "[risk-sound-alert] no working audio backend")
+        return False
 
     def _to_float(self, value: object) -> float:
         try:
