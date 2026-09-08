@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -236,6 +237,102 @@ class DepthEstimator:
             return 0.0
         
         # Compute depth based on method
+        if method == 'median':
+            return float(np.median(region))
+        elif method == 'mean':
+            return float(np.mean(region))
+        elif method == 'min':
+            return float(np.min(region))
+        else:
+            return float(np.median(region))
+
+
+class OnnxDepthEstimator:
+    """
+    Depth estimation using an exported ONNX model.
+
+    Preprocessing follows the official Depth Anything recipe (resize to 518x518,
+    ImageNet normalize); only the heavy backbone/head runs through ONNX Runtime.
+    This is faster than the transformers pipeline and directly reusable with the
+    CUDA/TensorRT execution providers on a Jetson device.
+    """
+
+    _MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    _STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    _INPUT_SIZE = 518
+
+    def __init__(self, onnx_path=None, device=None):
+        import onnxruntime as ort
+
+        if onnx_path is None:
+            onnx_path = Path(__file__).resolve().parent / 'depth_anything_v2_small.onnx'
+        self.onnx_path = str(onnx_path)
+
+        if device is None:
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = device
+
+        if device == 'cuda':
+            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        else:
+            providers = ['CPUExecutionProvider']
+
+        self.session = ort.InferenceSession(self.onnx_path, providers=providers)
+        self.input_name = self.session.get_inputs()[0].name
+        self.output_name = self.session.get_outputs()[0].name
+        print(f"Loaded ONNX depth model on {device}")
+
+    def estimate_depth(self, image):
+        h, w = image.shape[:2]
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        rgb = cv2.resize(rgb, (self._INPUT_SIZE, self._INPUT_SIZE), interpolation=cv2.INTER_LINEAR)
+        rgb = (rgb - self._MEAN) / self._STD
+        pixel_values = rgb.transpose(2, 0, 1)[None].astype(np.float32)
+
+        depth = self.session.run([self.output_name], {self.input_name: pixel_values})[0][0]
+
+        depth = cv2.resize(depth, (w, h), interpolation=cv2.INTER_LINEAR)
+        depth_min = float(depth.min())
+        depth_max = float(depth.max())
+        if depth_max > depth_min:
+            depth = (depth - depth_min) / (depth_max - depth_min)
+        return depth
+
+    def colorize_depth(self, depth_map, cmap=cv2.COLORMAP_INFERNO):
+        depth_map_uint8 = (depth_map * 255).astype(np.uint8)
+        colored_depth = cv2.applyColorMap(depth_map_uint8, cmap)
+        return colored_depth
+
+    def get_depth_at_point(self, depth_map, x, y):
+        if 0 <= y < depth_map.shape[0] and 0 <= x < depth_map.shape[1]:
+            return depth_map[y, x]
+        return 0.0
+
+    def get_depth_in_region(self, depth_map, bbox, method='median', scale=0.5):
+        x1, y1, x2, y2 = [int(coord) for coord in bbox]
+
+        center_x = (x1 + x2) / 2
+        center_y = (y1 + y2) / 2
+        width = x2 - x1
+        height = y2 - y1
+
+        new_width = width * scale
+        new_height = height * scale
+
+        x1 = int(center_x - new_width / 2)
+        y1 = int(center_y - new_height / 2)
+        x2 = int(center_x + new_width / 2)
+        y2 = int(center_y + new_height / 2)
+
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        x2 = min(depth_map.shape[1] - 1, x2)
+        y2 = min(depth_map.shape[0] - 1, y2)
+
+        region = depth_map[y1:y2, x1:x2]
+        if region.size == 0:
+            return 0.0
+
         if method == 'median':
             return float(np.median(region))
         elif method == 'mean':

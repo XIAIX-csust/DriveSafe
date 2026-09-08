@@ -38,9 +38,9 @@ class RoadSurfaceDetector:
         integration_root = Path(__file__).resolve().parents[1]
 
         self.model_dir = Path(model_dir) if model_dir else integration_root / "code" / "models"
-        self.day_model_path = self.model_dir / "best.pt"
-        self.night_model_path = self.model_dir / "best_night.pt"
-        self.crack_model_path = self.model_dir / "crack_best.pt"
+        self.day_model_path = self._pick_model("best")
+        self.night_model_path = self._pick_model("best_night")
+        self.crack_model_path = self._pick_model("crack_best")
 
         missing = [
             str(path)
@@ -65,6 +65,13 @@ class RoadSurfaceDetector:
         self.current_frame_count = 0
 
         self._optimize_models()
+
+    def _pick_model(self, name: str) -> Path:
+        """Prefer a TensorRT engine if it was exported, otherwise the .pt weights."""
+        engine = self.model_dir / f"{name}.engine"
+        if engine.exists():
+            return engine
+        return self.model_dir / f"{name}.pt"
 
     def _optimize_models(self) -> None:
         if self.preferred_device == "cpu":
