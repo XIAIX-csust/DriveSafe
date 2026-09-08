@@ -15,8 +15,8 @@ class DummyOpt:
         self.weights = 'yolov10s.pt'
         self.source = 'lanechange.mp4'
         self.img_size = 640
-        self.conf_thres = 0.01
-        self.iou_thres = 0.01
+        self.conf_thres = 0.25
+        self.iou_thres = 0.45
         self.device = ''
         self.view_img = False
         self.save_txt = False
