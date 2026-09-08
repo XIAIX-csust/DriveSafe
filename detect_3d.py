@@ -34,6 +34,7 @@ from depth_model import DepthEstimator
 from bbox3d_utils import BBox3DEstimator, BirdEyeView
 from risk_field import RiskFieldEngine
 from runtime_governor import RuntimeGovernor
+from depth_worker import DepthAsyncWorker
 
 import sys
 
@@ -361,6 +362,10 @@ def detect(save_img=False, callback=None):
     # 使用与 YOLO 相同的 device，但如果显存不足，DepthEstimator 会自动 fallback 到 CPU
     depth_estimator = DepthEstimator(model_size='small', device=device.type if device.type != 'cpu' else 'cpu')
 
+    # A1 异步流水线：DepthAnything 由独立 worker 线程独占，主线程只跑 YOLO（帧率≈max 而非求和）
+    depth_worker = DepthAsyncWorker(depth_estimator)
+    depth_seeded = False  # 首帧由主线程同步 seed，避免与 worker 并发进 pipeline
+
     # 3D BBox Estimator (使用已加载的相机参数)
     if cam_params:
         K = np.array([
@@ -487,16 +492,21 @@ def detect(save_img=False, callback=None):
         if classify:
             pred = apply_classifier(pred, modelc, img, im0s)
 
-        # === 深度估计 (Governor 动态调控：负载高时隔帧/降采样，帧间复用深度图) ===
+        # === 深度估计 (A1 异步流水线：worker 独占 DepthAnything，主线程只做 YOLO) ===
         # 注意：im0s 可能是列表（多摄像头）或单张图
         # 这里假设是单张图处理，如果是多路视频可能需要遍历
         curr_im0_depth = im0s.copy() if not webcam else im0s[0].copy()
 
         depth_estimator.input_scale = governor.depth_input_scale()
-        if governor.should_run_depth() or depth_estimator.last_depth_map is None:
+        if not depth_seeded:
+            # 首帧同步算出并 seed，此后永远不要在本线程直接调 estimate_depth（防并发进 pipeline）
             depth_map = depth_estimator.estimate_depth(curr_im0_depth)
+            depth_worker.seed(depth_map)
+            depth_seeded = True
         else:
-            depth_map = depth_estimator.last_depth_map
+            if governor.should_run_depth():
+                depth_worker.submit(curr_im0_depth)  # 最新帧入队，过期帧自动丢弃
+            depth_map = depth_worker.latest()  # 滞后 ≤1 帧；Governor 降频时即复用上次结果
         # ============================
 
         # 处理检测结果
@@ -851,6 +861,7 @@ def detect(save_img=False, callback=None):
         governor.tick(time.time() - loop_t0)
 
     # 保存信息
+    depth_worker.shutdown()  # A1：释放深度 worker 线程
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         print(f"Results saved to {save_dir}{s}")
