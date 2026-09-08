@@ -1034,9 +1034,10 @@ class BirdEyeView:
         # We need to pass these values or infer them. Since we changed risk_field.py to have a backward_meter=10
         # The total physical height is now depth_meter + backward_meter.
         grid_h, grid_w = risk_map.shape
-        # Convert physical meters to pixels
-        physical_w_px = int((grid_w * 0.1) * self.scale) 
-        physical_h_px = int((grid_h * 0.1) * self.scale)
+        # Convert physical meters to pixels (grid always covers 16m width x 35m height).
+        # Avoid hard-coding the grid resolution so coarser risk grids keep correct scale.
+        physical_w_px = int(16.0 * self.scale)
+        physical_h_px = int(35.0 * self.scale)
         
         # The zero point of Z in the physical grid is now at index corresponding to backward_meter
         # If backward_meter is 10, and res is 0.1, the zero point is at index 100.
@@ -1210,4 +1211,3 @@ class BirdEyeView:
         if max_risk_id is not None:
              cv2.putText(self.bev_image, f"RISK ID: {max_risk_id}", (self.width - 120, 60),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-

@@ -30,7 +30,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from collections import defaultdict
 
 # 新增引用：YOLO-3D 核心模块
-from depth_model import DepthEstimator
+from depth_model import DepthEstimator, OnnxDepthEstimator
 from bbox3d_utils import BBox3DEstimator, BirdEyeView
 from risk_field import RiskFieldEngine
 from road_surface_fusion import (
@@ -375,7 +375,14 @@ def detect(save_img=False, callback=None):
     # YOLO-3D 初始化：Depth Anything v2 和 3D BBox Estimator
     print("Initializing Depth Anything v2...")
     # 使用与 YOLO 相同的 device，但如果显存不足，DepthEstimator 会自动 fallback 到 CPU
-    depth_estimator = DepthEstimator(model_size='small', device=device.type if device.type != 'cpu' else 'cpu')
+    depth_device = device.type if device.type != 'cpu' else 'cpu'
+    _onnx_path = Path(__file__).resolve().parent / 'depth_anything_v2_small.onnx'
+    if getattr(opt, 'depth_onnx', False) and _onnx_path.exists():
+        depth_estimator = OnnxDepthEstimator(device=depth_device)
+        print("Depth backend: ONNX Runtime")
+    else:
+        depth_estimator = DepthEstimator(model_size='small', device=depth_device)
+        print("Depth backend: transformers pipeline")
 
     # A1 异步流水线：DepthAnything 由独立 worker 线程独占，主线程只跑 YOLO（帧率≈max 而非求和）
     depth_worker = DepthAsyncWorker(depth_estimator)
@@ -470,7 +477,7 @@ def detect(save_img=False, callback=None):
         
     # Initialize Risk Field Engine & BEV Visualizer
     # 物理范围：宽16m，深25m，分辨率10cm (0.1m)
-    risk_engine = RiskFieldEngine(width_meter=16, depth_meter=25, grid_res=0.1)
+    risk_engine = RiskFieldEngine(width_meter=16, depth_meter=25, grid_res=0.2)
     
     # BEV 视图：宽400px，高600px (对应16m x 24m => 25 px/m)
     # 稍微调整高度以匹配比例
@@ -1044,6 +1051,7 @@ if __name__ == '__main__':
     parser.add_argument('--road-conf-thres', type=float, default=0.25)
     parser.add_argument('--depth-backend', choices=['depth-anything'], default='depth-anything')
     parser.add_argument('--max-frames', type=int, default=None)
+    parser.add_argument('--depth-onnx', action='store_true', help='use the exported ONNX depth model instead of the transformers pipeline')
     parser.add_argument('--save-jsonl', dest='save_jsonl', action='store_true', help='enable per-frame structured jsonl export')
     parser.add_argument('--no-save-jsonl', dest='save_jsonl', action='store_false', help='disable per-frame structured jsonl export')
     parser.add_argument('--structured-dir', type=str, default='structured', help='structured output subdirectory name')
