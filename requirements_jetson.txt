@@ -1,0 +1,9 @@
+# Jetson Orin Nano / NX 部署依赖补充（在 requirements_gpu.txt 基础上）
+#
+# 注意：PyTorch / torchvision 请使用 JetPack 自带的版本，不要从 PyPI 装 CUDA 版，
+# 否则和 JetPack 的 CUDA/TensorRT 不匹配。其余依赖：
+
+-r requirements_common.txt
+
+onnxruntime-gpu>=1.17.0
+ultralytics>=8.0.0
