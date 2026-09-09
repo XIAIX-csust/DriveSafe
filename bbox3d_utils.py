@@ -120,7 +120,8 @@ class BBox3DEstimator:
         
         # Convert depth to distance - use a larger range for better visualization
         # Map depth_value (0-1) to a range of 1-10 meters
-        distance = 1.0 + depth_value * 9.0  # Increased from 4.0 to 9.0 for a larger range
+        # 方向修正：DepthAnything 的相对深度数值越大表示越近，距离映射取反方向（范围 1-10m 不变）
+        distance = 1.0 + (1.0 - depth_value) * 9.0
         
         # Calculate 3D location
         location = self._backproject_point(center_x, center_y, distance)

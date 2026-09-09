@@ -223,7 +223,8 @@ class RoadSurfaceAnalyzer:
             depth_value = self._depth_from_bbox(depth_map, bbox)
 
         depth_value = float(np.clip(depth_value, 0.0, 1.0))
-        return 1.0 + depth_value * 9.0
+        # 方向修正：相对深度数值越大 = 越近（与 bbox3d_utils 保持一致，范围 1-10m 不变）
+        return 1.0 + (1.0 - depth_value) * 9.0
 
     def _depth_from_bbox(self, depth_map: np.ndarray, bbox: Tuple[int, int, int, int]) -> float:
         x1, y1, x2, y2 = bbox
