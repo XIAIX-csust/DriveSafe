@@ -774,11 +774,12 @@ def detect(save_img=False, callback=None):
                 vis_risk_map = np.maximum(vis_risk_map, surface_vis_map)
                 dynamic_risk = max_scf
                 combined_risk = max(dynamic_risk, surface_risk)
-                if combined_risk >= 0.8:
+                # 阈值按实测 SCF 分布标定（lanechange.mp4 300 帧：P50=91 / P85=100 / P95=107）
+                if combined_risk >= 110:
                     decision_status = 'HIGH'
-                elif combined_risk >= 0.55:
+                elif combined_risk >= 100:
                     decision_status = 'MEDIUM'
-                elif combined_risk >= 0.25:
+                elif combined_risk >= 90:
                     decision_status = 'LOW'
                 else:
                     decision_status = 'CLEAR'
@@ -879,11 +880,12 @@ def detect(save_img=False, callback=None):
                 surface_risk_map, surface_vis_map, surface_risk = road_fuser.build_surface_maps(surface_analysis, risk_engine)
                 vis_risk_map = np.maximum(vis_risk_map, surface_vis_map)
                 combined_risk = max(dynamic_risk, surface_risk)
-                if combined_risk >= 0.8:
+                # 阈值按实测 SCF 分布标定（lanechange.mp4 300 帧：P50=91 / P85=100 / P95=107）
+                if combined_risk >= 110:
                     decision_status = 'HIGH'
-                elif combined_risk >= 0.55:
+                elif combined_risk >= 100:
                     decision_status = 'MEDIUM'
-                elif combined_risk >= 0.25:
+                elif combined_risk >= 90:
                     decision_status = 'LOW'
                 else:
                     decision_status = 'CLEAR'
