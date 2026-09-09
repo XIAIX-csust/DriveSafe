@@ -11,13 +11,14 @@ class DepthEstimator:
     """
     Depth estimation using Depth Anything v2
     """
-    def __init__(self, model_size='small', device=None):
+    def __init__(self, model_size='small', device=None, half=None):
         """
         Initialize the depth estimator
         
         Args:
             model_size (str): Model size ('small', 'base', 'large')
             device (str): Device to run inference on ('cuda', 'cpu', 'mps')
+            half (bool, optional): Use FP16 inference on CUDA (默认: CUDA 时开启)
         """
         # Determine device
         if device is None:
@@ -50,20 +51,51 @@ class DepthEstimator:
         }
         
         model_name = model_map.get(model_size.lower(), model_map['small'])
-        
+
+        # FP16（Jetson 上收益明显；不支持时自动回退 FP32）
+        self.half = False
+        if half is None:
+            half = (self.pipe_device == 'cuda')
+        if half and self.pipe_device != 'cpu':
+            model_kwargs = {"torch_dtype": torch.float16}
+        else:
+            model_kwargs = {}
+
+        # 最近一帧深度图缓存（供外部/异步 worker 复用，避免重复推理）
+        self.last_depth_map = None
+
         # Create pipeline
         # Note: transformers pipeline handles device placement
-        # For FP16 optimization, one could add torch_dtype=torch.float16 if device supports it
         try:
-            self.pipe = pipeline(task="depth-estimation", model=model_name, device=self.pipe_device)
-            print(f"Loaded Depth Anything v2 {model_size} model on {self.pipe_device}")
+            self.pipe = pipeline(task="depth-estimation", model=model_name,
+                                 device=self.pipe_device, model_kwargs=model_kwargs)
+            self.half = bool(model_kwargs)
+            print(f"Loaded Depth Anything v2 {model_size} model on {self.pipe_device}"
+                  f"{' (FP16)' if self.half else ''}")
         except Exception as e:
             # Fallback to CPU if there are issues
             print(f"Error loading model on {self.pipe_device}: {e}")
             print("Falling back to CPU for depth estimation")
             self.pipe_device = 'cpu'
+            self.half = False
             self.pipe = pipeline(task="depth-estimation", model=model_name, device=self.pipe_device)
             print(f"Loaded Depth Anything v2 {model_size} model on CPU (fallback)")
+
+        # Jetson 兼容自检：个别 CUDA 驱动对 FP16 ViT 推理不兼容。
+        # 启动时用小图试跑一次，失败自动回退 FP32，避免运行到一半才崩溃。
+        if self.half and self.pipe_device != 'cpu':
+            try:
+                probe = Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8))
+                self.pipe(probe)
+                print("Depth Anything FP16 self-check passed")
+            except Exception as exc:
+                print(f"Depth Anything FP16 self-check failed ({exc}); reloading in FP32")
+                self.half = False
+                try:
+                    self.pipe = pipeline(task="depth-estimation", model=model_name, device=self.pipe_device)
+                    print("Depth Anything reloaded in FP32")
+                except Exception as exc2:
+                    print(f"Depth Anything FP32 reload also failed ({exc2})")
     
     def estimate_depth(self, image):
         """
@@ -115,7 +147,10 @@ class DepthEstimator:
         depth_max = depth_map.max()
         if depth_max > depth_min:
             depth_map = (depth_map - depth_min) / (depth_max - depth_min)
-        
+
+        # 缓存最近一次结果（供异步 worker / 外部复用）
+        self.last_depth_map = depth_map
+
         return depth_map
     
     def colorize_depth(self, depth_map, cmap=cv2.COLORMAP_INFERNO):
