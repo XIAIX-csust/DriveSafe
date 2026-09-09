@@ -60,6 +60,9 @@ class DepthEstimator:
             model_kwargs = {"torch_dtype": torch.float16}
         else:
             model_kwargs = {}
+        # 注意：transformers 会就地修改传入的 model_kwargs（实测 {} -> {'dtype': 'auto'}），
+        # 所以在调用前记录"是否请求 FP16"，并把副本传进去。
+        use_fp16 = bool(model_kwargs)
 
         # 最近一帧深度图缓存（供外部/异步 worker 复用，避免重复推理）
         self.last_depth_map = None
@@ -68,8 +71,13 @@ class DepthEstimator:
         # Note: transformers pipeline handles device placement
         try:
             self.pipe = pipeline(task="depth-estimation", model=model_name,
-                                 device=self.pipe_device, model_kwargs=model_kwargs)
-            self.half = bool(model_kwargs)
+                                 device=self.pipe_device, model_kwargs=dict(model_kwargs))
+            # 以模型实际 dtype 为准，避免 CPU 上被就地修改的 dict 误判成 FP16
+            self.half = bool(use_fp16)
+            model_dtype = getattr(getattr(self.pipe, "model", None), "dtype", None)
+            if self.half and model_dtype is not None and model_dtype != torch.float16:
+                print(f"Warning: requested FP16 but loaded dtype is {model_dtype}; using FP32 path")
+                self.half = False
             print(f"Loaded Depth Anything v2 {model_size} model on {self.pipe_device}"
                   f"{' (FP16)' if self.half else ''}")
         except Exception as e:
