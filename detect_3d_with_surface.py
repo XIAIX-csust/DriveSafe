@@ -31,6 +31,8 @@ from collections import defaultdict
 
 # 新增引用：YOLO-3D 核心模块
 from depth_model import DepthEstimator
+from frame_pacer import FramePacer
+from depth_worker import DepthAsyncWorker
 from bbox3d_utils import BBox3DEstimator, BirdEyeView
 from risk_field import RiskFieldEngine
 from road_surface_fusion import (
@@ -365,6 +367,20 @@ def detect(save_img=False, callback=None):
     print("Initializing Depth Anything v2...")
     # 使用与 YOLO 相同的 device，但如果显存不足，DepthEstimator 会自动 fallback 到 CPU
     depth_estimator = DepthEstimator(model_size='small', device=device.type if device.type != 'cpu' else 'cpu')
+
+    # 需求 5：固定帧率节拍器（帧率写死，不动态调整；处理慢时丢帧，不降精度）
+    pacer = FramePacer(
+        target_fps=getattr(opt, 'fps', 25.0),
+        enabled=not getattr(opt, 'no_pacing', False),
+        realtime=webcam,
+        source_fps=fps,
+    )
+    print(f"[frame-pacer] 目标帧率写死为 {pacer.target_fps:.0f} FPS（enabled={pacer.enabled}）")
+
+    # 需求 6：DepthAnything 异步 worker（独立 CUDA stream；--no-depth-async 可退回同步）
+    depth_async = not getattr(opt, 'no_depth_async', False)
+    depth_worker = DepthAsyncWorker(depth_estimator) if depth_async else None
+    depth_seeded = False  # 首帧同步算出后 seed，避免与 worker 并发进 pipeline
     
     # 3D BBox Estimator (使用已加载的相机参数)
     if cam_params:
@@ -468,6 +484,10 @@ def detect(save_img=False, callback=None):
         if opt.max_frames is not None and frame_idx >= opt.max_frames:
             break
 
+        # 需求 5：固定 25 FPS 节拍 —— 落后太多则丢帧追平（不降分辨率/不降模型精度）
+        if not pacer.begin_frame():
+            continue
+
         # 图像预处理
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()
@@ -487,14 +507,24 @@ def detect(save_img=False, callback=None):
         if classify:
             pred = apply_classifier(pred, modelc, img, im0s)
 
-        # === 深度估计 (每一帧做一次) ===
+        # === 深度估计 (需求 6：异步 worker + 独立 CUDA stream；首帧同步 seed) ===
         # 注意：im0s 可能是列表（多摄像头）或单张图
         # 这里假设是单张图处理，如果是多路视频可能需要遍历
         curr_im0_depth = im0s.copy() if not webcam else im0s[0].copy()
-        
-        # 性能优化：如果显存紧张，可以隔帧运行深度估计
-        # 目前每帧都跑
-        depth_map = depth_estimator.estimate_depth(curr_im0_depth)
+
+        if depth_worker is None:
+            # 同步路径（--no-depth-async）
+            depth_map = depth_estimator.estimate_depth(curr_im0_depth)
+        elif not depth_seeded:
+            depth_map = depth_estimator.estimate_depth(curr_im0_depth)
+            depth_worker.seed(depth_map)
+            depth_seeded = True
+        else:
+            depth_worker.submit(curr_im0_depth)   # 只保最新帧，积压时丢旧帧
+            depth_map = depth_worker.latest()     # 滞后 ≤ 1 个深度处理周期
+            if depth_map is None:                 # 极端兜底：worker 还没出结果
+                depth_map = depth_estimator.estimate_depth(curr_im0_depth)
+                depth_worker.seed(depth_map)
         road_main_results, road_aux_results, road_model_label = road_detector.detect(
             curr_im0_depth,
             conf_thres=opt.road_conf_thres,
@@ -950,6 +980,11 @@ def detect(save_img=False, callback=None):
         current_centers = {src['id']: (src['x'], src['z']) for src in risk_sources}
         prev_centers = current_centers
 
+    if depth_worker is not None:
+        depth_worker.shutdown()
+        print(depth_worker.status_line())
+    print(pacer.status_line())
+
     if structured_writer is not None:
         structured_writer.close()
 
@@ -994,6 +1029,10 @@ if __name__ == '__main__':
     parser.add_argument('--save-jsonl', dest='save_jsonl', action='store_true', help='enable per-frame structured jsonl export')
     parser.add_argument('--no-save-jsonl', dest='save_jsonl', action='store_false', help='disable per-frame structured jsonl export')
     parser.add_argument('--structured-dir', type=str, default='structured', help='structured output subdirectory name')
+    # 需求 5/6：固定帧率节拍 + 异步深度
+    parser.add_argument('--fps', type=float, default=25.0, help='目标帧率，写死不动态调整（默认 25）')
+    parser.add_argument('--no-pacing', action='store_true', help='关闭固定帧率节拍（不限速、不丢帧）')
+    parser.add_argument('--no-depth-async', action='store_true', help='关闭深度异步 worker，退回每帧同步推理')
     opt = parser.parse_args()
     print(opt)
     check_requirements('requirements_common.txt', exclude=('pycocotools', 'thop'))

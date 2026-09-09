@@ -31,6 +31,10 @@ class DummyOpt:
         self.exist_ok = False
         self.config_deepsort = 'deep_sort/configs/deep_sort.yaml'
         self.show_img = False
+        # 需求 5/6：固定帧率节拍 + 异步深度
+        self.fps = 25.0
+        self.no_pacing = False
+        self.no_depth_async = False
 
 import detect_3d
 # 注入 opt

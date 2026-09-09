@@ -40,6 +40,10 @@ class DummyOpt:
         self.max_frames = None
         self.save_jsonl = False
         self.structured_dir = 'structured'
+        # 需求 5/6：固定帧率节拍 + 异步深度
+        self.fps = 25.0
+        self.no_pacing = False
+        self.no_depth_async = False
 
 import detect_3d_with_surface as detect_3d
 detect_3d.opt = DummyOpt()
