@@ -1091,16 +1091,14 @@ class BirdEyeView:
         # Apply JET Colormap
         heatmap = cv2.applyColorMap(risk_uint8, cv2.COLORMAP_JET)
         
-        # 2. Gaussian Blur (Glow)
-        heatmap = cv2.GaussianBlur(heatmap, (21, 21), 0)
+        # 2. Gaussian Blur (Glow) —— 缩小核尺寸降低每帧开销
+        heatmap = cv2.GaussianBlur(heatmap, (9, 9), 0)
         
-        # 3. Contour Lines (Visual Detail)
-        # Thresholds for contours: 30%, 60%, 90%
+        # 3. Contour Lines (Visual Detail) —— 只画一条等高线，减少 findContours 开销
         contours_overlay = np.zeros_like(heatmap)
-        for thresh in [80, 150, 220]:
-            _, bin_img = cv2.threshold(risk_uint8, thresh, 255, cv2.THRESH_BINARY)
-            contours, _ = cv2.findContours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            cv2.drawContours(contours_overlay, contours, -1, (255, 255, 255), 1)
+        _, bin_img = cv2.threshold(risk_uint8, 150, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(contours_overlay, contours, -1, (255, 255, 255), 1)
             
         # 4. Transparency Mask
         # Only show heatmap where risk > threshold

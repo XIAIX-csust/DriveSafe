@@ -63,6 +63,9 @@ class RoadSurfaceDetector:
         self.last_model_label = "day"
         self.frame_skip = 2
         self.current_frame_count = 0
+        # 裂缝模型变化慢，按更长间隔运行（每 aux_frame_skip 次主模型运行跑一次）
+        self.aux_frame_skip = 2
+        self.aux_frame_count = 0
 
         self._optimize_models()
 
@@ -137,11 +140,16 @@ class RoadSurfaceDetector:
 
         try:
             main_results = main_model(image, **inference_args)
-            aux_results = self.auxiliary_model(image, **inference_args)
         except TypeError:
             inference_args.pop("device", None)
             main_results = main_model(image, **inference_args)
+
+        run_aux = (not self.last_aux_results) or (self.aux_frame_count % self.aux_frame_skip == 0)
+        self.aux_frame_count += 1
+        if run_aux:
             aux_results = self.auxiliary_model(image, **inference_args)
+        else:
+            aux_results = self.last_aux_results
 
         if main_results is None:
             main_results = []
