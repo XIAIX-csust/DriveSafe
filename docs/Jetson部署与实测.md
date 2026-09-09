@@ -56,7 +56,7 @@ python scripts/benchmark_jetson.py --source lanechange.mp4 --frames 60 --depth-o
 
 1. `--img-size` 降到 416；
 2. 深度用 `--depth-onnx`（已默认推荐）；
-3. 调 `--target-fps` 和 `--depth-strategy / --road-strategy / --reid-strategy / --bev-strategy`，让运行时调度器自动降频；
+3. 帧率与深度策略：`--fps 25` 固定节拍（写死、不动态调整），处理不过来时按背压**丢帧**而非降精度；需要排查性能时用 `--no-pacing` 关掉节拍、`--no-depth-async` 退回同步深度；
 4. 主检测换 TensorRT engine（把 `yolov10s.pt` 换成导出的 `.engine` 加载路径）。
 
 ## 七、现场启动
