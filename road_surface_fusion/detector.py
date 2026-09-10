@@ -138,16 +138,25 @@ class RoadSurfaceDetector:
             "device": self.inference_device,
         }
 
-        try:
-            main_results = main_model(image, **inference_args)
-        except TypeError:
-            inference_args.pop("device", None)
-            main_results = main_model(image, **inference_args)
+        def _infer(model):
+            """统一推理兜底：TensorRT engine 不接受 device= 参数时，去掉后重试。
+
+            主模型与 aux 模型都必须走这里。此前只有主模型在 try 内，若出现
+            「.pt 主模型 + .engine aux 模型」的混合部署，aux 抛出的 TypeError
+            不会被捕获，会直接中断整条流水线。
+            """
+            try:
+                return model(image, **inference_args)
+            except TypeError:
+                inference_args.pop("device", None)
+                return model(image, **inference_args)
+
+        main_results = _infer(main_model)
 
         run_aux = (not self.last_aux_results) or (self.aux_frame_count % self.aux_frame_skip == 0)
         self.aux_frame_count += 1
         if run_aux:
-            aux_results = self.auxiliary_model(image, **inference_args)
+            aux_results = _infer(self.auxiliary_model)
         else:
             aux_results = self.last_aux_results
 
