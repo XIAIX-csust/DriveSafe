@@ -4,6 +4,9 @@ from collections import deque
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
 
+# 风险等级阈值统一来源（SCF 尺度），不要在此另写数字
+from risk_field import RISK_THRESHOLDS, risk_level
+
 
 @dataclass
 class DetectionObject:
@@ -146,26 +149,22 @@ class DetectionDataStore:
         self._risk_trend.append(point)
 
     def _calculate_risk_level(self, risk_score: float) -> str:
-        if risk_score >= 510:
-            return "高风险"
-        elif risk_score >= 500:
-            return "中风险"
-        elif risk_score >= 480:
-            return "低风险"
-        else:
-            return "安全"
+        # 与 detect_3d_with_surface.py 的 decision_status 同源同阈值（risk_field.RISK_THRESHOLDS）
+        level = risk_level(risk_score)
+        return {"HIGH": "高风险", "MEDIUM": "中风险", "LOW": "低风险"}.get(level, "安全")
 
     def _determine_risk_type(self, obj: Dict[str, Any]) -> str:
         speed = obj.get('speed', 0)
         distance = obj.get('z', 999)
         risk_score = obj.get('scf', 0)
 
-        # 根据风险值(scf)判断
-        if risk_score >= 510:
+        # 根据风险值(scf)判断（阈值同 risk_field.RISK_THRESHOLDS）
+        level = risk_level(risk_score)
+        if level == "HIGH":
             return "高风险区域"
-        elif risk_score >= 500:
+        elif level == "MEDIUM":
             return "中风险区域"
-        elif risk_score >= 480:
+        elif level == "LOW":
             return "低风险区域"
         # 根据距离判断
         elif distance < 3:
@@ -203,7 +202,7 @@ class DetectionDataStore:
             for obj in current_objs:
                 if obj.risk_score > max_risk:
                     max_risk = obj.risk_score
-                if obj.risk_score >= 510:
+                if obj.risk_score >= RISK_THRESHOLDS["HIGH"]:
                     high_risk_count += 1
 
             return {

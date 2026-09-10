@@ -7,6 +7,9 @@ from collections import defaultdict
 import math
 from PIL import Image, ImageDraw, ImageFont
 
+# 风险等级阈值统一来源（SCF 尺度），不要在此另写数字
+from risk_field import RISK_THRESHOLDS
+
 # Default camera intrinsic matrix (can be overridden)
 DEFAULT_K = np.array([
     [718.856, 0.0, 607.1928],
@@ -527,9 +530,10 @@ class BBox3DEstimator:
         # Auto color selection if not provided
         if color is None:
             # === New: Dynamic color based on risk score ===
-            if risk_score > 0.7: # Risk Extremly High
+            # 注意：这里的 risk_score 是 SCF（几十级别），阈值取自 risk_field.RISK_THRESHOLDS
+            if risk_score >= RISK_THRESHOLDS["HIGH"]:  # 极高风险
                 color = (0, 0, 255) # Red
-            elif risk_score > 0.3: # Risk High
+            elif risk_score >= RISK_THRESHOLDS["MEDIUM"]:  # 高风险
                 color = (0, 255, 255) # Yellow
             else:
                 # Default class-based colors
@@ -849,10 +853,11 @@ class BirdEyeView:
                 size_factor = 1.0
             
             # Determine color based on class or risk
+            # risk_score 为 SCF（几十级别），阈值取自 risk_field.RISK_THRESHOLDS
             if color is None:
-                if risk_score > 0.7:
+                if risk_score >= RISK_THRESHOLDS["HIGH"]:
                     color = (0, 0, 255) # Red
-                elif risk_score > 0.3:
+                elif risk_score >= RISK_THRESHOLDS["MEDIUM"]:
                     color = (0, 255, 255) # Yellow
                 else:
                     if 'car' in class_name or 'vehicle' in class_name:
@@ -936,10 +941,10 @@ class BirdEyeView:
                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
 
             # === New: Natural Language Alert (Using PIL for Chinese) ===
-            # Adjust threshold: Make alerts much harder to trigger so 80% of time it's empty or just "notice"
-            if risk_score > 0.4:  # Increased base threshold significantly (was 0.05)
+            # risk_score 为 SCF（几十级别），阈值取自 risk_field.RISK_THRESHOLDS
+            if risk_score >= RISK_THRESHOLDS["LOW"]:
                 # Decide text and color based on risk severity
-                if risk_score > 0.8:  # Very high threshold for actual warning (was 0.2)
+                if risk_score >= RISK_THRESHOLDS["HIGH"]:
                     alert_text = "警告：发生危险"
                     text_color = (0, 0, 0) # Black text
                     bg_color = (0, 165, 255) # Orange background

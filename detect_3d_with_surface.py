@@ -34,7 +34,15 @@ from depth_model import DepthEstimator, OnnxDepthEstimator
 from frame_pacer import FramePacer
 from depth_worker import DepthAsyncWorker
 from bbox3d_utils import BBox3DEstimator, BirdEyeView
-from risk_field import RiskFieldEngine
+from risk_field import (
+    RISK_LEVEL_ORDER,
+    RISK_THRESHOLDS,
+    SURFACE_TO_SCF,
+    RiskFieldEngine,
+    level_from_road_danger,
+    risk_level,
+    worse_level,
+)
 from road_surface_fusion import (
     RoadSurfaceAnalyzer,
     RoadSurfaceDetector,
@@ -633,24 +641,24 @@ def detect(save_img=False, callback=None):
                 total_risk_map += surface_risk_map
                 vis_risk_map = np.maximum(vis_risk_map, surface_vis_map)
                 dynamic_risk = max_scf
-                combined_risk = max(dynamic_risk, surface_risk)
-                # 阈值按实测 SCF 分布标定（lanechange.mp4 300 帧 / conf=0.25：
-                # P50=22.6 P95=26.4 P99=42.8 max=62.5 —— 分布极窄，故锚定尾部而非分位数）
-                if combined_risk >= 50:
-                    decision_status = 'HIGH'
-                elif combined_risk >= 40:
-                    decision_status = 'MEDIUM'
-                elif combined_risk >= 30:
-                    decision_status = 'LOW'
-                else:
-                    decision_status = 'CLEAR'
+                # 动态风险按 SCF 分级；路面风险按 0–1 分级后转等级；两者取"更严重者"
+                # （阈值统一来自 risk_field.RISK_THRESHOLDS，不再在此写死数字）
+                dynamic_level = risk_level(dynamic_risk)
+                surface_level = level_from_road_danger(surface_analysis.road_danger_level)
+                decision_status = worse_level(dynamic_level, surface_level)
+                # combined_risk 仅用于展示/记录，把 0–1 的路面风险换算到 SCF 尺度
+                combined_risk = max(dynamic_risk, surface_risk * SURFACE_TO_SCF)
+                surface_dominates = (
+                    RISK_LEVEL_ORDER[surface_level] >= RISK_LEVEL_ORDER[dynamic_level]
+                    and bool(surface_analysis.hazards)
+                )
                 if decision_status == 'CLEAR':
                     warning_text = 'Path is clear'
-                elif surface_risk >= dynamic_risk and surface_analysis.hazards:
+                elif surface_dominates:
                     warning_text = f'{decision_status} road surface risk: {surface_analysis.warning_text}'
                 else:
                     warning_text = f'{decision_status} dynamic object risk ahead'
-                if surface_risk >= dynamic_risk and surface_analysis.hazards:
+                if surface_dominates:
                     max_risk_id = 'ROAD'
                 max_scf = combined_risk
                 for hazard in surface_analysis.hazards:
@@ -697,7 +705,8 @@ def detect(save_img=False, callback=None):
                             'object_id': src['id'],
                             'depth_value': (src['z'] - 1.0) / 9.0 
                         }
-                        bev_visualizer.draw_box(box_3d_bev)
+                        # 补传 risk_score（SCF），否则 BEV 配色与中文提示永远不会触发
+                        bev_visualizer.draw_box(box_3d_bev, risk_score=src.get('scf', 0))
                         
                     # 3. Draw Risk Heatmap (Glowing Overlay)
                     # Use vis_risk_map for better visual
@@ -740,20 +749,16 @@ def detect(save_img=False, callback=None):
                 vis_risk_map = np.zeros((risk_engine.grid_h, risk_engine.grid_w))
                 surface_risk_map, surface_vis_map, surface_risk = road_fuser.build_surface_maps(surface_analysis, risk_engine)
                 vis_risk_map = np.maximum(vis_risk_map, surface_vis_map)
-                combined_risk = max(dynamic_risk, surface_risk)
-                # 阈值按实测 SCF 分布标定（lanechange.mp4 300 帧 / conf=0.25：
-                # P50=22.6 P95=26.4 P99=42.8 max=62.5 —— 分布极窄，故锚定尾部而非分位数）
-                if combined_risk >= 50:
-                    decision_status = 'HIGH'
-                elif combined_risk >= 40:
-                    decision_status = 'MEDIUM'
-                elif combined_risk >= 30:
-                    decision_status = 'LOW'
-                else:
-                    decision_status = 'CLEAR'
+                dynamic_level = risk_level(dynamic_risk)
+                surface_level = level_from_road_danger(surface_analysis.road_danger_level)
+                decision_status = worse_level(dynamic_level, surface_level)
+                combined_risk = max(dynamic_risk, surface_risk * SURFACE_TO_SCF)
                 if decision_status == 'CLEAR':
                     warning_text = 'Path is clear'
-                elif surface_analysis.hazards:
+                elif (
+                    RISK_LEVEL_ORDER[surface_level] >= RISK_LEVEL_ORDER[dynamic_level]
+                    and surface_analysis.hazards
+                ):
                     warning_text = f'{decision_status} road surface risk: {surface_analysis.warning_text}'
                     max_risk_id = 'ROAD'
                 else:

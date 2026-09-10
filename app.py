@@ -8,6 +8,9 @@ import random
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# 风险等级阈值统一来源（SCF 尺度）
+from risk_field import RISK_THRESHOLDS, risk_level
+
 
 
 # ─────────────────────────────────────────────
@@ -1153,14 +1156,19 @@ def render_risk_overview(placeholder=None):
         risk_index = 0.0
         avg_risk = 0.0
 
-    risk_progress = min(max(0, (risk_index - 400) / 120 * 100), 100)
+    # 阈值统一来自 risk_field.RISK_THRESHOLDS（SCF 尺度），与画面 decision_status 同源
+    risk_progress = min(max(0.0, risk_index / RISK_THRESHOLDS["HIGH"] * 100), 100)
 
-    if risk_index >= 610:
+    _risk_label = risk_level(risk_index)
+    if _risk_label == "HIGH":
         risk_text = "高风险"
         risk_color = "#e8303a"
-    elif risk_index >= 500:
+    elif _risk_label == "MEDIUM":
         risk_text = "中风险"
         risk_color = "#ffb300"
+    elif _risk_label == "LOW":
+        risk_text = "低风险"
+        risk_color = "#ffd54f"
     else:
         risk_text = "安全"
         risk_color = "#00e5a0"

@@ -216,3 +216,45 @@ class RiskFieldEngine:
             combined_field /= max_val
         
         return total_risk, combined_field
+
+
+# ─────────────────────────────────────────────────────────────
+#  风险等级阈值（SCF 尺度）—— 单一真源
+#
+#  标定依据：lanechange.mp4 300 帧 / conf=0.25 / iou=0.45
+#  （见 docs/测试结果.md §2.1：P50=22.6 P95=26.4 P99=42.8 max=62.5，
+#    分布极窄，分位数阈值会退化成"在噪声上划线"，故锚定尾部）
+#
+#  ⚠️ 所有消费端都必须引用这里，不要再各写一套数字：
+#     - detect_3d_with_surface.py 的 decision_status
+#     - data_store.py 的风险分级 / 高风险计数
+#     - bbox3d_utils.py 的画框配色与 BEV 提示
+#     - app.py 仪表盘的进度与颜色
+#  否则会出现"画面判 HIGH、侧边栏显示安全"这类口径分裂。
+# ─────────────────────────────────────────────────────────────
+RISK_THRESHOLDS = {"HIGH": 50.0, "MEDIUM": 40.0, "LOW": 30.0}
+RISK_LEVEL_ORDER = {"CLEAR": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3}
+# 路面风险是 0–1 的独立尺度，用它换算成"SCF 等效值"以便合并展示：
+# surface_risk = 1.0（最严重）等价于 HIGH 阈值
+SURFACE_TO_SCF = RISK_THRESHOLDS["HIGH"]
+
+
+def risk_level(scf: float) -> str:
+    """SCF → 'HIGH' / 'MEDIUM' / 'LOW' / 'CLEAR'"""
+    if scf >= RISK_THRESHOLDS["HIGH"]:
+        return "HIGH"
+    if scf >= RISK_THRESHOLDS["MEDIUM"]:
+        return "MEDIUM"
+    if scf >= RISK_THRESHOLDS["LOW"]:
+        return "LOW"
+    return "CLEAR"
+
+
+def worse_level(a: str, b: str) -> str:
+    """取两个等级中更严重的一个"""
+    return a if RISK_LEVEL_ORDER.get(a, 0) >= RISK_LEVEL_ORDER.get(b, 0) else b
+
+
+def level_from_road_danger(danger_level) -> str:
+    """路面 road_danger_level(int 0–3) → 等级字符串"""
+    return {3: "HIGH", 2: "MEDIUM", 1: "LOW"}.get(int(danger_level or 0), "CLEAR")
