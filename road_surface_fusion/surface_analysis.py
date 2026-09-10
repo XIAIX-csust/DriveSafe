@@ -7,6 +7,21 @@ import cv2
 import numpy as np
 
 
+# 路面模型类别名 → 归一化隐患类型。
+# crack_best.pt 是 9 类模型（Crack/Manhole/Net/Pothole/Patch-Crack/Patch-Net/Patch-Pothole/other/Other），
+# day/night 模型是单类（pothole）。类别名统一小写后查表，未命中则回退调用方传入的默认类型。
+_CLASS_TO_HAZARD_TYPE: Dict[str, str] = {
+    "crack": "crack",
+    "patch-crack": "crack",
+    "pothole": "pothole",
+    "patch-pothole": "pothole",
+    "manhole": "manhole",
+    "net": "net",
+    "patch-net": "net",
+    "other": "other",
+}
+
+
 @dataclass
 class SurfaceHazard:
     hazard_id: str
@@ -83,11 +98,15 @@ class RoadSurfaceAnalyzer:
         )
 
         result.hazards = sorted(pothole_hazards + crack_hazards, key=lambda item: item.severity, reverse=True)
-        result.pothole_count = len(pothole_hazards)
-        result.crack_count = len(crack_hazards)
+        # 按归一化后的 hazard_type 统计（同一类型可能来自不同模型：
+        # crack 模型也会检出 Pothole，day/night 模型只检 Pothole）
+        result.pothole_count = sum(1 for hazard in result.hazards if hazard.hazard_type == "pothole")
+        result.crack_count = sum(1 for hazard in result.hazards if hazard.hazard_type == "crack")
         result.near_hazard_count = sum(1 for hazard in result.hazards if hazard.near_zone)
         result.total_surface_area_ratio = float(sum(hazard.pixel_area for hazard in result.hazards) / image_area)
-        result.crack_severity = self._classify_crack_severity(crack_hazards)
+        result.crack_severity = self._classify_crack_severity(
+            [hazard for hazard in result.hazards if hazard.hazard_type == "crack"]
+        )
         result.road_risk_score = self._compute_road_risk_score(result.hazards, result.near_hazard_count)
         result.road_danger_level, result.warning_text = self._decide_warning(result)
         result.dominant_hazard_type = result.hazards[0].hazard_type if result.hazards else None
@@ -119,10 +138,30 @@ class RoadSurfaceAnalyzer:
         if hasattr(yolo_result, "masks") and yolo_result.masks is not None:
             masks = yolo_result.masks.data.detach().cpu().numpy()
 
+        names = getattr(yolo_result, "names", None)
+        if not isinstance(names, dict):
+            names = {}
+
         hazards: List[SurfaceHazard] = []
         for index, box in enumerate(yolo_result.boxes):
             bbox = box.xyxy[0].detach().cpu().numpy().astype(int).tolist()
             confidence = float(box.conf[0].detach().cpu().item()) if hasattr(box, "conf") else 0.0
+
+            # 按模型实际预测的类别确定隐患类型与标签。
+            # （原先一律套用调用方传入的 hazard_type，会把 crack 模型检出的
+            #   Manhole / Pothole / Net / Patch-* 全部误标成 Crack）
+            item_type, item_label = hazard_type, label
+            try:
+                cls_tensor = getattr(box, "cls", None)
+                if cls_tensor is not None and len(cls_tensor) > 0:
+                    cls_id = int(cls_tensor[0].detach().cpu().item())
+                    cls_name = names.get(cls_id)
+                    if isinstance(cls_name, str) and cls_name.strip():
+                        cls_name = cls_name.strip()
+                        item_type = _CLASS_TO_HAZARD_TYPE.get(cls_name.lower(), hazard_type)
+                        item_label = cls_name
+            except Exception:
+                pass
 
             mask = None
             if masks is not None and index < len(masks):
@@ -142,7 +181,7 @@ class RoadSurfaceAnalyzer:
             z_m = distance_m
             near_zone = bottom_ratio >= (1.0 - self.danger_zone_ratio)
             severity = self._compute_severity(
-                hazard_type=hazard_type,
+                hazard_type=item_type,
                 confidence=confidence,
                 area_ratio=area_ratio,
                 bottom_ratio=bottom_ratio,
@@ -151,9 +190,9 @@ class RoadSurfaceAnalyzer:
 
             hazards.append(
                 SurfaceHazard(
-                    hazard_id=f"{hazard_type}_{index}",
-                    hazard_type=hazard_type,
-                    label=label,
+                    hazard_id=f"{item_type}_{index}",
+                    hazard_type=item_type,
+                    label=item_label,
                     confidence=confidence,
                     bbox=bbox_tuple,
                     centroid_px=centroid,

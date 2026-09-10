@@ -73,7 +73,8 @@ class RoadSurfaceVisualizer:
             radius = max(4, int(4 + hazard.severity * 8))
             cv2.circle(canvas, (px, py), radius, color, -1)
             cv2.circle(canvas, (px, py), radius + 2, (255, 255, 255), 1)
-            short_label = "P" if hazard.hazard_type == "pothole" else "C"
+            # 短标签取实际类别首字母（Pothole→P、Crack→C、Manhole→M、Net→N…）
+            short_label = hazard.label.strip()[:1].upper() or "?"
             cv2.putText(
                 canvas,
                 short_label,
