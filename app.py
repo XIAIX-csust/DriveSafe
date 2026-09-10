@@ -18,8 +18,10 @@ class DummyOpt:
         self.weights = 'yolov10s.pt'
         self.source = 'lanechange.mp4'
         self.img_size = 640
-        self.conf_thres = 0.01
-        self.iou_thres = 0.01
+        # 与命令行默认值保持一致（detect_3d_with_surface.py: --conf-thres 0.25 / --iou-thres 0.45）
+        # 网页端不走 argparse，这里就是网页端实际生效的口径
+        self.conf_thres = 0.25
+        self.iou_thres = 0.45
         self.device = ''
         self.view_img = False
         self.save_txt = False
@@ -1028,8 +1030,9 @@ def render_sidebar():
         st.markdown('<div class="section-header">检测参数</div>', unsafe_allow_html=True)
 
         with st.expander("高级参数"):
-            conf_val = st.slider("置信度阈值", 0.01, 1.0, 0.01, 0.01)
-            iou_val = st.slider("IOU 阈值", 0.01, 1.0, 0.01, 0.01)
+            # 默认值取自 DummyOpt（单一来源），避免与命令行默认值再次漂移
+            conf_val = st.slider("置信度阈值", 0.01, 1.0, float(detect_3d.opt.conf_thres), 0.01)
+            iou_val = st.slider("IOU 阈值", 0.01, 1.0, float(detect_3d.opt.iou_thres), 0.01)
             detect_3d.opt.conf_thres = conf_val
             detect_3d.opt.iou_thres = iou_val
 
