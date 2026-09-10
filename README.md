@@ -31,18 +31,17 @@
 
 ```
 ├── app.py                    # Streamlit应用程序
-├── detect_3d.py              # 主检测和处理逻辑
-├── detect_3d_with_surface.py # 带路面检测的主检测逻辑
+├── detect_3d_with_surface.py # 主检测和处理逻辑
 ├── depth_model.py            # 深度估计模型
 ├── bbox3d_utils.py           # 3D边界框估计和可视化
 ├── risk_field.py             # 风险场计算
-├── main_ui.py                # 主用户界面
+├── depth_worker.py           # 深度异步 worker（独立 CUDA stream）
+├── frame_pacer.py            # 固定帧率节拍器
 ├── road_surface_fusion/      # 路面平整度检测和风险融合
 ├── deep_sort/                # DeepSort目标跟踪
 ├── yolov10/                  # YOLOv10模型
 ├── models/                   # 模型权重
-├── utils/                    # 工具函数，包含motion_engine.py
-├── trajectory_prediction/    # 轨迹预测模块
+├── utils/                    # 工具函数
 ├── data/                     # 测试数据
 ├── code/                     # 路面检测模型
 ├── requirements.txt          # 依赖项
@@ -103,17 +102,7 @@ streamlit run app.py
 python detect_3d_with_surface.py --source lanechange.mp4 --no-view-img --nosave --device cpu
 ```
 
-### 3. 运行轨迹预测示例
-
-```bash
-python trajectory_prediction/example_usage.py
-```
-
-### 4. 运行主UI
-
-```bash
-python main_ui.py
-```
+可选参数：`--fps 25` 固定帧率节拍（默认）、`--no-pacing` 关闭节拍、`--no-depth-async` 关闭深度异步、`--depth-onnx` 使用 ONNX 深度后端。
 
 ## 深度教程
 

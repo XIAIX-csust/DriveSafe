@@ -1,4 +1,3 @@
-from .depth_runtime import RobustDepthEstimator
 from .detector import RoadSurfaceDetector
 from .risk_fusion import RoadSurfaceRiskFuser
 from .structured_output import StructuredOutputWriter, build_frame_record
@@ -10,7 +9,6 @@ __all__ = [
     "RoadSurfaceDetector",
     "RoadSurfaceRiskFuser",
     "RoadSurfaceVisualizer",
-    "RobustDepthEstimator",
     "StructuredOutputWriter",
     "SurfaceAnalysisResult",
     "SurfaceHazard",
