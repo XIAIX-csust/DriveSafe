@@ -4,10 +4,11 @@ import numpy as np
 from numpy import random
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
-from utils.general import check_img_size, check_requirements, check_imshow, non_max_suppression, apply_classifier, \
-    scale_coords, xyxy2xywh, strip_optimizer, set_logging, increment_path
+from utils.general import check_requirements, check_imshow, set_logging, increment_path
 from utils.plots import plot_one_box
-from utils.torch_utils import select_device, load_classifier, time_synchronized
+# 说明：check_img_size / non_max_suppression / apply_classifier / scale_coords / xyxy2xywh /
+# strip_optimizer 与 select_device / load_classifier / time_synchronized 统一取自 yolov10.utils，
+# 原先同时从 utils.* 导入同名函数会被此处覆盖（重复导入，已清理）。
 from yolov10.utils.general import (
     check_img_size, non_max_suppression, apply_classifier, scale_coords, xyxy2xywh, strip_optimizer)
 from yolov10.utils.torch_utils import select_device, load_classifier, time_synchronized
@@ -633,12 +634,13 @@ def detect(save_img=False, callback=None):
                 vis_risk_map = np.maximum(vis_risk_map, surface_vis_map)
                 dynamic_risk = max_scf
                 combined_risk = max(dynamic_risk, surface_risk)
-                # 阈值按实测 SCF 分布标定（lanechange.mp4 300 帧：P50=91 / P85=100 / P95=107）
-                if combined_risk >= 110:
+                # 阈值按实测 SCF 分布标定（lanechange.mp4 300 帧 / conf=0.25：
+                # P50=22.6 P95=26.4 P99=42.8 max=62.5 —— 分布极窄，故锚定尾部而非分位数）
+                if combined_risk >= 50:
                     decision_status = 'HIGH'
-                elif combined_risk >= 100:
+                elif combined_risk >= 40:
                     decision_status = 'MEDIUM'
-                elif combined_risk >= 90:
+                elif combined_risk >= 30:
                     decision_status = 'LOW'
                 else:
                     decision_status = 'CLEAR'
@@ -739,12 +741,13 @@ def detect(save_img=False, callback=None):
                 surface_risk_map, surface_vis_map, surface_risk = road_fuser.build_surface_maps(surface_analysis, risk_engine)
                 vis_risk_map = np.maximum(vis_risk_map, surface_vis_map)
                 combined_risk = max(dynamic_risk, surface_risk)
-                # 阈值按实测 SCF 分布标定（lanechange.mp4 300 帧：P50=91 / P85=100 / P95=107）
-                if combined_risk >= 110:
+                # 阈值按实测 SCF 分布标定（lanechange.mp4 300 帧 / conf=0.25：
+                # P50=22.6 P95=26.4 P99=42.8 max=62.5 —— 分布极窄，故锚定尾部而非分位数）
+                if combined_risk >= 50:
                     decision_status = 'HIGH'
-                elif combined_risk >= 100:
+                elif combined_risk >= 40:
                     decision_status = 'MEDIUM'
-                elif combined_risk >= 90:
+                elif combined_risk >= 30:
                     decision_status = 'LOW'
                 else:
                     decision_status = 'CLEAR'
@@ -866,8 +869,8 @@ if __name__ == '__main__':
     parser.add_argument('--weights', nargs='+', type=str, default='yolov10s.pt', help='model.pt path(s)')
     parser.add_argument('--source', type=str, default='lanechange.mp4', help='source')  # 输入视频路径
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.01, help='object confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.01, help='IOU threshold for NMS')
+    parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold')
+    parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--view-img', dest='view_img', action='store_true', help='display results')
     parser.add_argument('--no-view-img', dest='view_img', action='store_false', help='disable display results')
