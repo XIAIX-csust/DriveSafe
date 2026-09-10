@@ -168,3 +168,15 @@ python detect_3d_with_surface.py --source lanechange.mp4 --no-view-img --nosave 
 - `data_store.py`（480/500/510）与 `app.py`（≥500）仍沿用旧风险尺度，与新阈值不完全一致。
 - `combined_risk = max(dynamic_risk, surface_risk)` 中 `surface_risk` 为 0–1，与 SCF（几十~几百）量级不同，路面风险难以单独触发告警。
 - 深度刷新率受算力限制（300 帧实测约 73%）；后续可做「深度过期时改用几何测距」的兜底（见 A1 改进计划）。
+
+### 代码清理（2026-09）
+
+已移除两类不再使用的代码，**文件仍保留在 git 历史中**，需要时可直接取回：
+
+| 类别 | 内容 | 取回方式 |
+|------|------|----------|
+| 未接线/重复代码 | 旧入口 `detect_3d.py`+`main_ui.py`、`_backup/`、`UI/`、`counter/`、`plan/`、`picture/`、`trajectory_prediction/`、`deep_sort/{detector,webserver,DeepSORT_Monet_traffic}`（仅保留中文字体）、死函数 `generate_bev_map()` 等 | `git log --diff-filter=D --name-only --oneline` 找到删除提交，再 `git checkout <提交>~1 -- <路径>` |
+| 训练/实验脚本 | `yolov10/train.py`、`yolov10/models/*`、`yolov10/utils/{datasets,activations}.py`、`yolov10/yolov10/*`、`utils/{loss,activations}.py`、`utils/{aws,wandb_logging}/*`、`models/{export.py,yolov10/*}` | 同上 |
+
+> ⚠️ 注意：`models/yolo.py` 与 `utils/autoanchor.py` **不能删** —— `yolov10s.pt` / `weights/best.pt` 反序列化时会动态 import `models.yolo`，而它又 import `utils.autoanchor`，静态分析会把它们误判成"未使用"。
+
