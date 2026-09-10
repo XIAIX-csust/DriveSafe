@@ -37,6 +37,10 @@
 ├── risk_field.py             # 风险场计算
 ├── depth_worker.py           # 深度异步 worker（独立 CUDA stream）
 ├── frame_pacer.py            # 固定帧率节拍器
+├── data_store.py             # Streamlit 侧内存数据仓（风险分级/趋势/统计）
+├── risk_alerts/              # 语音告警 + 中文横幅提示
+├── scripts/                  # ONNX/TensorRT 导出、Jetson 部署、FPS 基准
+├── docs/                     # 测试结果与 Jetson 部署实测文档
 ├── road_surface_fusion/      # 路面平整度检测和风险融合
 ├── deep_sort/                # DeepSort目标跟踪
 ├── yolov10/                  # YOLOv10模型
@@ -47,9 +51,12 @@
 ├── requirements.txt          # 依赖项
 ├── requirements_common.txt   # 通用依赖项
 ├── requirements_gpu.txt      # GPU依赖项
+├── requirements_jetson.txt   # Jetson 补充依赖（onnxruntime-gpu 等）
 ├── README.md                 # 项目说明（本文档）
-└── README_DETAILED.md        # 深度教程
+└── README_DETAILED.md        # 早期详细教程（部分路径已过期，以本文档为准）
 ```
+
+> ⚠️ `README_DETAILED.md` 写于早期版本，其中 `main_ui.py`、`trajectory_prediction/`、`utils/motion_engine.py`、`deep_sort/webserver/` 等路径**已删除**，命令照抄会失败。
 
 ## 安装说明
 
@@ -104,6 +111,16 @@ python detect_3d_with_surface.py --source lanechange.mp4 --no-view-img --nosave 
 
 可选参数：`--fps 25` 固定帧率节拍（默认）、`--no-pacing` 关闭节拍、`--no-depth-async` 关闭深度异步、`--depth-onnx` 使用 ONNX 深度后端。
 
+### 3. FPS 基准测试（上板调参用）
+
+```bash
+python scripts/benchmark_jetson.py --source lanechange.mp4 --frames 60 --depth-onnx
+```
+
+### 4. 本机实测数据
+
+本机（Windows / 纯 CPU）的 300 帧实测、阈值标定前后对比、方向修正前后对照见 [docs/测试结果.md](docs/测试结果.md)（原始逐帧数据在 `docs/test-results/`）。
+
 ## 深度教程
 
 如需更详细的项目信息、安装指南、代码结构分析和高级使用方法，请参考 [README_DETAILED.md](README_DETAILED.md) 文件。
@@ -150,12 +167,13 @@ python detect_3d_with_surface.py --source lanechange.mp4 --no-view-img --nosave 
 | 改动 | 说明 |
 |------|------|
 | 深度→距离方向 | DepthAnything 相对深度**数值越大越近**，原公式方向相反；车辆测距与路面隐患距离两处均改为 `distance = 1.0 + (1.0 - depth_value) * 9.0`（范围仍 1–10 m） |
-| 风险阈值 | 原 `0.8/0.55/0.25` 与 SCF 量级不匹配（300 帧实测 P50=91 / P95=107），导致 298/300 帧恒为 HIGH；改为 `110/100/90`，实测 HIGH 2.0% / MEDIUM 13.0% / LOW 46.0% / CLEAR 39.0% |
+| 风险阈值 | 原 `0.8/0.55/0.25` 与 SCF 量级不匹配（300 帧实测 P50=91 / P95=107），曾出现 298/300 帧恒为 HIGH 的误报。修正检测阈值 `conf 0.01→0.25 / iou 0.01→0.45` 后重新标定（见 [docs/测试结果.md](docs/测试结果.md) §2.1），现行阈值为 **`50/40/30`**，实测 HIGH 0.3% / MEDIUM 1.7% / LOW 1.0% / CLEAR 97.0% |
+| 风险等级口径统一 | 同一个 SCF 此前在 5 处各写了一套阈值（decision `50/40/30`、`data_store` `510/500/480`、画框 `0.7/0.3`、BEV 提示 `0.4/0.8`、仪表盘 `400~610`），导致"画面判 HIGH、侧边栏显示安全"、3D 框恒红、BEV 中文提示恒不触发。现全部收敛到 `risk_field.RISK_THRESHOLDS` 单一真源，动态风险与路面风险**各自按本尺度分级后取更严重者** |
 | FP16 判定 | `transformers.pipeline` 会就地修改传入的 `model_kwargs`（`{}` → `{'dtype':'auto'}`），导致 CPU 上误判为 FP16；改为调用前记录 + 传副本 + 以模型实际 dtype 判定 |
 
 ### 运行提示
 
-- 推荐入口：Web 端 `streamlit run app.py`；CLI 端 `detect_3d_with_surface.py`。`detect_3d.py` / `main_ui.py` 为旧入口，已不再维护。
+- 推荐入口：Web 端 `streamlit run app.py`；CLI 端 `detect_3d_with_surface.py`。旧入口 `detect_3d.py` / `main_ui.py` **已删除**（见下方"代码清理"）。
 - 首次运行需下载 Depth Anything v2 权重，国内建议 `$env:HF_ENDPOINT = "https://hf-mirror.com"`。
 - `detect_3d_with_surface.py` 启动时会执行 `check_requirements()`；它在 Windows 下拼的 `pip install 'pkg<版本'` 会因 `<` 被当作重定向而失败，建议先 `pip install -r requirements_common.txt` 装齐依赖。
 - CPU 冒烟测试：
@@ -165,9 +183,13 @@ python detect_3d_with_surface.py --source lanechange.mp4 --no-view-img --nosave 
 
 ### 已知遗留
 
-- `data_store.py`（480/500/510）与 `app.py`（≥500）仍沿用旧风险尺度，与新阈值不完全一致。
-- `combined_risk = max(dynamic_risk, surface_risk)` 中 `surface_risk` 为 0–1，与 SCF（几十~几百）量级不同，路面风险难以单独触发告警。
-- 深度刷新率受算力限制（300 帧实测约 73%）；后续可做「深度过期时改用几何测距」的兜底（见 A1 改进计划）。
+- **深度仍是相对映射**：`distance = 1.0 + (1.0 - depth_value) * 9.0` 只保证顺序正确，绝对值恒落在 1–10 m（实测车辆集中在 7–10 m），**不是真实米数**；要拿真实距离需做标定或换 metric 深度模型（Roadmap B2）。
+- `config/camera_params.yaml` 缺失时用估算内参（fx ≈ 图像宽度），几何测距会系统性偏大，建议标定一次写入。
+- `data_store._determine_risk_type` 的距离判据（`distance < 3` / `< 5`）在当前深度尺度下不会触发。
+- 结构化输出里的 `speed_mps` 实际单位是 **km/h**（风险场内部也按 km/h 处理，`/3.6` 换算），仅字段名不符。
+- 深度刷新率受算力限制（CPU 300 帧实测约 73%）；A1 的"深度过期改用几何测距"兜底尚未实现（P1–P8 计划见会话记录）。
+- Linux/Jetson 语音告警后端只做过单元级验证，**未在真机运行过**；TensorRT/ONNX 路径（`--depth-onnx`、`.engine` 优先加载）同理，需上板验证。
+- `utils/general.py` 的 `check_requirements()` 用 `open(path, 'r')` 读 requirements 文件（跟随系统 locale），**该文件含非 ASCII 字符会在 Windows 上崩溃**；pip 输出 `.decode()` 也有同类问题。
 
 ### 代码清理（2026-09）
 
