@@ -109,7 +109,7 @@ streamlit run app.py
 python detect_3d_with_surface.py --source lanechange.mp4 --no-view-img --nosave --device cpu
 ```
 
-可选参数：`--fps 25` 固定帧率节拍（默认）、`--no-pacing` 关闭节拍、`--no-depth-async` 关闭深度异步、`--depth-onnx` 使用 ONNX 深度后端。
+可选参数：`--fps 25` 固定帧率节拍（默认）、`--no-pacing` 关闭节拍、`--no-depth-async` 关闭深度异步、`--depth-onnx` 使用 ONNX 深度后端、`--road-roi-top 0.5` 路面模型 ROI 起点（0 表示整幅，越小保留越多画面上部）、`--no-road-parallel` 关闭主/辅路面模型并行。
 
 ### 3. FPS 基准测试（上板调参用）
 
@@ -161,6 +161,9 @@ python scripts/benchmark_jetson.py --source lanechange.mp4 --frames 60 --depth-o
 | 深度异步 worker | 独立线程 + 独立 `torch.cuda.Stream`，只保留最新帧，滞后 ≤ 1 个深度处理周期 | `depth_worker.py`；`--no-depth-async` 退回同步 |
 | CUDA FP16 | 仅 CUDA 路径启用 FP16，启动时小图自检，不兼容自动回退 FP32 | `depth_model.py` |
 | Linux/Jetson 语音告警 | Linux 自动探测 `paplay → aplay → pw-play → ffplay → pygame`，非阻塞播放现有 wav；Windows 仍走 winsound | `risk_alerts/sound_processing/alerter.py` |
+| 路面模型 ROI 裁剪 + 主/辅并行 | 只把画面下部（默认 50%）送路面模型、day/night 与 crack 并行推理。实测 150 帧：**0.635 → 0.576 s/帧（约 9%）** | `road_surface_fusion/detector.py`；`--road-roi-top` / `--no-road-parallel` |
+| 深度走 float 预测 | 直接用 `predicted_depth`（float32）替代 pipeline 的 uint8 PIL，去掉 PIL 往返与 8bit 量化：转换 15.3 → 7.9 ms/帧，可区分深度级数 **256 → 154 万** | `depth_model.py` |
+| 风险趋势图窗口化 | Web 端折线图默认只显示**最近 150 帧**（点不再累积糊成一片），数据不裁剪，图上拖动/滚轮可回看更早的帧 | `app.py` `render_risk_trend()` |
 
 ### 修正
 
@@ -190,6 +193,8 @@ python scripts/benchmark_jetson.py --source lanechange.mp4 --frames 60 --depth-o
 - 深度刷新率受算力限制（CPU 300 帧实测约 73%）；A1 的"深度过期改用几何测距"兜底尚未实现（P1–P8 计划见会话记录）。
 - Linux/Jetson 语音告警后端只做过单元级验证，**未在真机运行过**；TensorRT/ONNX 路径（`--depth-onnx`、`.engine` 优先加载）同理，需上板验证。
 - `utils/general.py` 的 `check_requirements()` 用 `open(path, 'r')` 读 requirements 文件（跟随系统 locale），**该文件含非 ASCII 字符会在 Windows 上崩溃**；pip 输出 `.decode()` 也有同类问题。
+- **路面 ROI 50% 有确定的召回风险**：只保留画面下半部，位于 `y < 540` 的远处缺陷（如参考 run 中 bbox y1=285 的 Crack）**完全看不到**；在意远处缺陷时把 `--road-roi-top` 降到 0.25–0.3（省时相应减少）。详见 [docs/测试结果.md](docs/测试结果.md) §7。
+- **端到端延迟未做优化**：当前板子只负责采集与传输，若采用"服务器推理 + 回传渲染画面"会因两次编解码 + 抖动缓冲导致高延迟；建议改为只回传结构化数据、显示端本地渲染（方案②），仓库内尚无网络传输层。
 
 ### 代码清理（2026-09）
 
