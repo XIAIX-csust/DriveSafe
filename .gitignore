@@ -69,3 +69,7 @@ temp/
 *.mov
 *.mp4
 *.webm
+
+# Local runtime artifacts / account data (never commit)
+user/
+vehicle_info.txt
