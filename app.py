@@ -1219,6 +1219,10 @@ def render_risk_trend(placeholder=None):
     import altair as alt
     import pandas as pd
 
+    # 默认只显示最近 WINDOW 帧，避免点越积越多糊成一片；
+    # 更早的点不删除，仍在图表数据里，拖动/滚轮即可回看
+    WINDOW = 200
+
     def _render():
         trend = data_store.get_risk_trend()
 
@@ -1235,10 +1239,15 @@ def render_risk_trend(placeholder=None):
 
         df = pd.DataFrame(trend).sort_values("frame_idx")
 
+        # 默认视图窗口 = 最近 WINDOW 帧
+        x_max = int(df["frame_idx"].max())
+        x_min = max(0, x_max - WINDOW + 1)
+
         base = alt.Chart(df).encode(
             x=alt.X(
                 "frame_idx:Q",
-                title="帧序号",
+                title="帧序号（可拖动/滚轮回看）",
+                scale=alt.Scale(domain=[x_min, x_max], nice=False, zero=False),
                 axis=alt.Axis(format="d", tickMinStep=1)
             ),
             y=alt.Y(
@@ -1254,14 +1263,17 @@ def render_risk_trend(placeholder=None):
 
         line = base.mark_line(color="#00bfff", strokeWidth=2, opacity=0.9)
         points = base.mark_circle(
-            size=46,
+            size=26,
             color="#ffffff",
             stroke="#ffffff",
-            strokeWidth=1.2,
-            opacity=1.0
+            strokeWidth=1.0,
+            opacity=0.95
         )
 
-        chart = (line + points).properties(height=154).configure_axis(
+        chart = (line + points).add_params(
+            # 把 x 轴尺度绑定到区间选择：图上拖动平移、滚轮/双指缩放，可回看更早的帧
+            alt.selection_interval(bind="scales", encodings=["x"])
+        ).properties(height=154).configure_axis(
             labelColor="#aabbcc",
             titleColor="#aaddff",
             gridColor="#1b3444",
@@ -1275,7 +1287,7 @@ def render_risk_trend(placeholder=None):
             background="transparent"
         )
 
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, width="stretch")
 
     if placeholder is None:
         _render()
