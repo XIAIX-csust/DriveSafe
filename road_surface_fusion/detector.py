@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -7,6 +8,7 @@ import cv2
 import numpy as np
 import torch
 from ultralytics import YOLO
+from ultralytics.engine.results import Boxes, Masks
 
 # 修复 PyTorch 2.6+ 的 weights_only 问题
 try:
@@ -34,7 +36,13 @@ class RoadSurfaceDetector:
     inside Distance-measurement so the original code can remain untouched.
     """
 
-    def __init__(self, model_dir: Optional[str] = None, preferred_device: Optional[str] = None):
+    def __init__(
+        self,
+        model_dir: Optional[str] = None,
+        preferred_device: Optional[str] = None,
+        roi_top_ratio: float = 0.5,
+        parallel: bool = True,
+    ):
         integration_root = Path(__file__).resolve().parents[1]
 
         self.model_dir = Path(model_dir) if model_dir else integration_root / "code" / "models"
@@ -67,7 +75,31 @@ class RoadSurfaceDetector:
         self.aux_frame_skip = 2
         self.aux_frame_count = 0
 
+        # ROI：只把画面下半部喂给路面模型（0 = 关闭，用整幅）。
+        # 路面隐患只出现在下半部，裁掉上半部能显著减少 letterbox 预处理面积，
+        # 而 ROI 内的有效分辨率不变 —— 比整幅降 imgsz 更安全。
+        self.roi_top_ratio = float(roi_top_ratio or 0.0)
+        # 主模型与 aux 模型互不依赖，串行时是两个推理时间相加，故默认并行
+        self.parallel = bool(parallel)
+        self._executor = (
+            ThreadPoolExecutor(max_workers=2, thread_name_prefix="roadsurf")
+            if self.parallel
+            else None
+        )
+
         self._optimize_models()
+
+    def close(self) -> None:
+        """释放并行的线程池（进程退出或显式销毁时调用）。"""
+        if self._executor is not None:
+            self._executor.shutdown(wait=False)
+            self._executor = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _pick_model(self, name: str) -> Path:
         """Prefer a TensorRT engine if it was exported, otherwise the .pt weights."""
@@ -129,42 +161,99 @@ class RoadSurfaceDetector:
             for model in [self.day_model, self.night_model, self.auxiliary_model]:
                 model.conf = conf_thres
 
+        height, width = image.shape[:2]
+        # ROI 裁剪：路面隐患只出现在画面下半部（roi_top_ratio=0 表示不裁）
+        if 0.0 < self.roi_top_ratio < 1.0:
+            y_off = max(0, min(int(height * self.roi_top_ratio), height - 1))
+        else:
+            y_off = 0
+        roi = image[y_off:, :] if y_off > 0 else image
+
+        # 昼夜判断仍用整幅（下半幅亮度不具代表性）
         night_mode = self.is_night(image)
         self.last_model_label = "night" if night_mode else "day"
         main_model = self.night_model if night_mode else self.day_model
 
-        inference_args = {
-            "verbose": False,
-            "device": self.inference_device,
-        }
-
-        def _infer(model):
-            """统一推理兜底：TensorRT engine 不接受 device= 参数时，去掉后重试。
-
-            主模型与 aux 模型都必须走这里。此前只有主模型在 try 内，若出现
-            「.pt 主模型 + .engine aux 模型」的混合部署，aux 抛出的 TypeError
-            不会被捕获，会直接中断整条流水线。
-            """
-            try:
-                return model(image, **inference_args)
-            except TypeError:
-                inference_args.pop("device", None)
-                return model(image, **inference_args)
-
-        main_results = _infer(main_model)
-
         run_aux = (not self.last_aux_results) or (self.aux_frame_count % self.aux_frame_skip == 0)
         self.aux_frame_count += 1
-        if run_aux:
-            aux_results = _infer(self.auxiliary_model)
+
+        if run_aux and self._executor is not None:
+            # 主/辅模型并行：两者互不依赖，串行时是两个推理耗时相加
+            future_main = self._executor.submit(self._infer, main_model, roi)
+            future_aux = self._executor.submit(self._infer, self.auxiliary_model, roi)
+            main_results = future_main.result()
+            aux_results = future_aux.result()
         else:
-            aux_results = self.last_aux_results
+            main_results = self._infer(main_model, roi)
+            # 未到 aux 周期时复用上次结果（已是整幅坐标，不要再平移一次）
+            aux_results = self._infer(self.auxiliary_model, roi) if run_aux else self.last_aux_results
 
         if main_results is None:
             main_results = []
         if aux_results is None:
             aux_results = []
 
+        # 把 ROI 局部坐标还原为整幅坐标（下游客度采样/比例计算依赖它）
+        main_results = self._restore_coords(main_results, y_off, (height, width))
+        if run_aux:
+            aux_results = self._restore_coords(aux_results, y_off, (height, width))
+
         self.last_results = main_results
         self.last_aux_results = aux_results
         return main_results, aux_results, self.last_model_label
+
+    def _infer(self, model, image):
+        """统一推理入口：TensorRT engine 不接受 device= 参数时，去掉后重试。
+
+        每次调用使用独立的参数 dict（不再共享、不再就地修改），因此可被多线程安全并发调用。
+        """
+        args = {"verbose": False, "device": self.inference_device}
+        try:
+            return model(image, **args)
+        except TypeError:
+            args.pop("device", None)
+            return model(image, **args)
+
+    def _restore_coords(self, results, y_off: int, full_shape: Tuple[int, int]):
+        """把在 ROI 裁剪图上得到的检测框/掩码还原到整幅图像坐标。
+
+        模型输入是 `image[y_off:, :]`，返回的框坐标属于 ROI 局部像素坐标系
+        （boxes.orig_shape 也是 ROI 尺寸），而下游 (surface_analysis) 按整幅坐标做
+        深度采样、bottom_ratio、area_ratio 计算，所以框要平移 y。
+
+        ⚠️ 掩码要特别小心：`masks.data` 的形状是 **letterbox 预处理分辨率**
+        （实测 ROI 1906x540 -> masks.data (1,192,640)），并不是 ROI 像素尺寸。
+        因此必须先把它缩放到 ROI 像素尺寸，再整块贴回原图对应位置；
+        直接按 ROI 坐标贴会得到完全错误的几何（bbox/质心/面积/距离全错）。
+        """
+        if not results or y_off <= 0:
+            return results
+
+        height, width = full_shape
+        roi_h = height - y_off
+        for res in results:
+            boxes = getattr(res, "boxes", None)
+            if boxes is not None and len(boxes):
+                data = boxes.data.clone()
+                data[:, 1] += y_off  # y1
+                data[:, 3] += y_off  # y2
+                res.boxes = Boxes(data, (height, width))
+
+            masks = getattr(res, "masks", None)
+            if masks is not None and masks.data is not None and len(masks.data):
+                m = masks.data.float()  # (N, h_lb, w_lb) —— letterbox 预处理空间
+                # letterbox 按长边缩放：宽度正好映射到 w_lb，故 r = w_lb / width；
+                # 高度方向多出来的若干行是 stride 对齐补的 padding，必须先裁掉再缩放，
+                # 否则掩码会整体上移（实测约 6% 偏差）。
+                r = (m.shape[2] / float(width)) if width else 0.0
+                if r > 0 and roi_h > 0:
+                    content_h = max(1, min(int(m.shape[1]), int(round(roi_h * r))))
+                    m = m[:, :content_h, :]
+                    m = torch.nn.functional.interpolate(
+                        m.unsqueeze(1), size=(roi_h, width), mode="bilinear", align_corners=False
+                    ).squeeze(1)
+                full = m.new_zeros((m.shape[0], height, width))
+                full[:, y_off:, :] = m
+                res.masks = Masks(full, (height, width))
+
+        return results

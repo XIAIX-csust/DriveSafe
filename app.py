@@ -42,6 +42,9 @@ class DummyOpt:
         self.save_img = False
         self.road_model_dir = 'code/models'
         self.road_conf_thres = 0.25
+        # 路面模型 ROI（只看画面下方该比例以上；0=整幅）与主/辅模型并行开关
+        self.road_roi_top = 0.5
+        self.no_road_parallel = False
         self.max_frames = None
         self.save_jsonl = False
         self.structured_dir = 'structured'

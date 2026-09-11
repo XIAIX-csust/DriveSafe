@@ -275,7 +275,12 @@ def detect(save_img=False, callback=None):
         print(f"Warning: No camera params found. Using estimated intrinsics for {vid_w}x{vid_h}")
         
     bbox3d_estimator = BBox3DEstimator(camera_matrix=K)
-    road_detector = RoadSurfaceDetector(model_dir=opt.road_model_dir, preferred_device=device.type)
+    road_detector = RoadSurfaceDetector(
+        model_dir=opt.road_model_dir,
+        preferred_device=device.type,
+        roi_top_ratio=getattr(opt, 'road_roi_top', 0.5),
+        parallel=not getattr(opt, 'no_road_parallel', False),
+    )
     road_analyzer = RoadSurfaceAnalyzer()
     road_visualizer = RoadSurfaceVisualizer()
     road_fuser = RoadSurfaceRiskFuser()
@@ -889,6 +894,10 @@ if __name__ == '__main__':
     parser.add_argument("--config_deepsort", type=str, default="deep_sort/configs/deep_sort.yaml")
     parser.add_argument('--road-model-dir', type=str, default=str(Path(__file__).resolve().parent / 'code' / 'models'))
     parser.add_argument('--road-conf-thres', type=float, default=0.25)
+    parser.add_argument('--road-roi-top', type=float, default=0.5,
+                        help='路面模型只推理画面下方该比例以上的区域（0=关闭 ROI，用整幅）')
+    parser.add_argument('--no-road-parallel', action='store_true',
+                        help='关闭主/辅路面模型并行推理（退回串行，便于对照排查）')
     parser.add_argument('--depth-backend', choices=['depth-anything'], default='depth-anything')
     parser.add_argument('--max-frames', type=int, default=None)
     parser.add_argument('--depth-onnx', action='store_true', help='use the exported ONNX depth model instead of the transformers pipeline')
