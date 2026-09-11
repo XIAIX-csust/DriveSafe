@@ -93,7 +93,7 @@ if 'theme_mode' not in st.session_state:
 # 深色主题 CSS
 DARK_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 /* ── Root palette ── */
 :root {
@@ -147,13 +147,13 @@ DARK_CSS = """
 
 /* ── All text ── */
 html, body, [class*="css"] {
-    font-family: 'Rajdhani', sans-serif !important;
+    font-family: 'Inter', sans-serif !important;
     color: var(--text-primary) !important;
 }
 
 /* ── Main headings ── */
 h1, h2, h3 {
-    font-family: 'Orbitron', monospace !important;
+    font-family: 'Inter', sans-serif !important;
     letter-spacing: 0.06em !important;
 }
 
@@ -171,20 +171,20 @@ h1, h2, h3 {
     box-shadow: var(--glow-blue) !important;
 }
 [data-testid="metric-container"] label {
-    font-family: 'Share Tech Mono', monospace !important;
+    font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.85rem !important;
     color: #00e5ff !important;
     letter-spacing: 0.1em !important;
     text-transform: uppercase !important;
 }
 [data-testid="metric-container"] [data-testid="stMetricValue"] {
-    font-family: 'Orbitron', monospace !important;
+    font-family: 'Inter', sans-serif !important;
     font-size: 1.6rem !important;
     font-weight: 800 !important;
     color: var(--text-primary) !important;
 }
 [data-testid="metric-container"] [data-testid="stMetricDelta"] {
-    font-family: 'Share Tech Mono', monospace !important;
+    font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.75rem !important;
 }
 
@@ -194,7 +194,7 @@ h1, h2, h3 {
     color: var(--accent-blue) !important;
     border: 1px solid var(--accent-blue) !important;
     border-radius: 6px !important;
-    font-family: 'Orbitron', monospace !important;
+    font-family: 'Inter', sans-serif !important;
     font-size: 0.72rem !important;
     font-weight: 600 !important;
     letter-spacing: 0.1em !important;
@@ -239,7 +239,7 @@ h1, h2, h3 {
 }
 
 .video-header {
-    font-family: 'Share Tech Mono', monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 0.85rem;
     color: #aabbcc;
     letter-spacing: 0.14em;
@@ -279,7 +279,7 @@ h1, h2, h3 {
 .dataframe {
     background: var(--bg-card) !important;
     color: var(--text-primary) !important;
-    font-family: 'Share Tech Mono', monospace !important;
+    font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.82rem !important;
 }
 
@@ -296,7 +296,7 @@ h1, h2, h3 {
 /* ── Status badge ── */
 .status-badge {
     display: inline-block;
-    font-family: 'Share Tech Mono', monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 0.7rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -324,7 +324,7 @@ h1, h2, h3 {
 
 /* ── Section header ── */
 .section-header {
-    font-family: 'Orbitron', monospace;
+    font-family: 'Inter', sans-serif;
     font-size: 0.95rem;
     letter-spacing: 0.15em;
     text-transform: uppercase;
@@ -339,7 +339,7 @@ h1, h2, h3 {
 
 /* ── Sidebar logo ── */
 .sidebar-logo {
-    font-family: 'Orbitron', monospace;
+    font-family: 'Inter', sans-serif;
     font-size: 1.05rem;
     font-weight: 800;
     color: var(--accent-blue);
@@ -349,7 +349,7 @@ h1, h2, h3 {
     text-shadow: var(--glow-blue);
 }
 .sidebar-version {
-    font-family: 'Share Tech Mono', monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 0.65rem;
     color: var(--text-muted);
     text-align: center;
@@ -360,7 +360,7 @@ h1, h2, h3 {
 
 /* ── Page title area ── */
 .page-title {
-    font-family: 'Orbitron', monospace;
+    font-family: 'Inter', sans-serif;
     font-size: 1.45rem;
     font-weight: 900;
     letter-spacing: 0.06em;
@@ -369,7 +369,7 @@ h1, h2, h3 {
 }
 .page-title span { color: var(--accent-blue); }
 .page-subtitle {
-    font-family: 'Share Tech Mono', monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 0.9rem;
     letter-spacing: 0.22em;
     color: #99aabb;
@@ -377,20 +377,30 @@ h1, h2, h3 {
     margin-top: 4px;
 }
 
+/* ── Login shell：容器 st.container(key="login_shell") 生成的类 ── */
+.st-key-login_shell {
+    width: min(92vw, 460px);
+    max-width: 100%;
+    margin-inline: auto;
+    padding-block: clamp(8px, 6vh, 56px);
+}
+
 /* ── Login form ── */
 .login-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 20px;
-    padding: 48px 56px;
+    /* 响应式：宽度与内边距随视口缩放，浏览器放大/缩小时不再错位 */
+    padding: clamp(20px, 4.5vw, 48px) clamp(18px, 5vw, 56px);
     box-shadow: 0 0 60px rgba(0,191,255,0.08), 0 0 120px rgba(0,0,0,0.6);
-    max-width: 460px;
-    width: 100%;
+    width: min(100%, 460px);
+    margin-inline: auto;
+    box-sizing: border-box;
     text-align: center;
 }
 .login-logo {
-    font-family: 'Orbitron', monospace;
-    font-size: 1.8rem;
+    font-family: 'Inter', sans-serif;
+    font-size: clamp(1.35rem, 1.05rem + 1.5vw, 1.8rem);
     font-weight: 900;
     letter-spacing: 0.08em;
     color: var(--accent-blue);
@@ -400,7 +410,7 @@ h1, h2, h3 {
 .login-divider {
     height: 1px;
     background: linear-gradient(90deg, transparent, var(--accent-blue), transparent);
-    margin: 24px 0;
+    margin: clamp(14px, 3vh, 24px) 0;
     opacity: 0.4;
 }
 
@@ -489,7 +499,7 @@ footer {
 # 浅色/白天主题 CSS
 LIGHT_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 /* ── Light Mode Root palette ── */
 :root {
@@ -533,13 +543,13 @@ LIGHT_CSS = """
 
 /* ── All text ── */
 html, body, [class*="css"] {
-    font-family: 'Rajdhani', sans-serif !important;
+    font-family: 'Inter', sans-serif !important;
     color: var(--text-primary) !important;
 }
 
 /* ── Main headings ── */
 h1, h2, h3 {
-    font-family: 'Orbitron', monospace !important;
+    font-family: 'Inter', sans-serif !important;
     letter-spacing: 0.06em !important;
     color: var(--text-primary); /* 确保标题在浅色背景下可见 */
 }
@@ -558,20 +568,20 @@ h1, h2, h3 {
     box-shadow: var(--glow-blue) !important;
 }
 [data-testid="metric-container"] label {
-    font-family: 'Share Tech Mono', monospace !important;
+    font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.85rem !important;
     color: var(--accent-blue) !important; /* 使用主色调 */
     letter-spacing: 0.1em !important;
     text-transform: uppercase !important;
 }
 [data-testid="metric-container"] [data-testid="stMetricValue"] {
-    font-family: 'Orbitron', monospace !important;
+    font-family: 'Inter', sans-serif !important;
     font-size: 1.6rem !important;
     font-weight: 800 !important;
     color: var(--text-primary) !important;
 }
 [data-testid="metric-container"] [data-testid="stMetricDelta"] {
-    font-family: 'Share Tech Mono', monospace !important;
+    font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.75rem !important;
     color: var(--text-muted) !important; /* 使用次要文字颜色 */
 }
@@ -582,7 +592,7 @@ h1, h2, h3 {
     color: var(--accent-blue) !important;
     border: 1px solid var(--accent-blue) !important;
     border-radius: 6px !important;
-    font-family: 'Orbitron', monospace !important;
+    font-family: 'Inter', sans-serif !important;
     font-size: 0.72rem !important;
     font-weight: 600 !important;
     letter-spacing: 0.1em !important;
@@ -631,7 +641,7 @@ h1, h2, h3 {
 }
 
 .video-header {
-    font-family: 'Share Tech Mono', monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 0.85rem;
     color: var(--text-muted);
     letter-spacing: 0.14em;
@@ -649,7 +659,7 @@ h1, h2, h3 {
 .dataframe {
     background: var(--bg-card) !important;
     color: var(--text-primary) !important;
-    font-family: 'Share Tech Mono', monospace !important;
+    font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.82rem !important;
 }
 
@@ -666,7 +676,7 @@ h1, h2, h3 {
 /* ── Status badge ── */
 .status-badge {
     display: inline-block;
-    font-family: 'Share Tech Mono', monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 0.7rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -694,7 +704,7 @@ h1, h2, h3 {
 
 /* ── Section header ── */
 .section-header {
-    font-family: 'Orbitron', monospace;
+    font-family: 'Inter', sans-serif;
     font-size: 0.95rem;
     letter-spacing: 0.15em;
     text-transform: uppercase;
@@ -709,7 +719,7 @@ h1, h2, h3 {
 
 /* ── Sidebar logo ── */
 .sidebar-logo {
-    font-family: 'Orbitron', monospace;
+    font-family: 'Inter', sans-serif;
     font-size: 1.05rem;
     font-weight: 800;
     color: var(--accent-blue);
@@ -719,7 +729,7 @@ h1, h2, h3 {
     text-shadow: none; /* 移除深色主题的发光效果 */
 }
 .sidebar-version {
-    font-family: 'Share Tech Mono', monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 0.65rem;
     color: var(--text-muted);
     text-align: center;
@@ -730,7 +740,7 @@ h1, h2, h3 {
 
 /* ── Page title area ── */
 .page-title {
-    font-family: 'Orbitron', monospace;
+    font-family: 'Inter', sans-serif;
     font-size: 1.45rem;
     font-weight: 900;
     letter-spacing: 0.06em;
@@ -739,7 +749,7 @@ h1, h2, h3 {
 }
 .page-title span { color: var(--accent-blue); }
 .page-subtitle {
-    font-family: 'Share Tech Mono', monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 0.9rem;
     letter-spacing: 0.22em;
     color: var(--text-muted);
@@ -747,20 +757,30 @@ h1, h2, h3 {
     margin-top: 4px;
 }
 
+/* ── Login shell：容器 st.container(key="login_shell") 生成的类 ── */
+.st-key-login_shell {
+    width: min(92vw, 460px);
+    max-width: 100%;
+    margin-inline: auto;
+    padding-block: clamp(8px, 6vh, 56px);
+}
+
 /* ── Login form ── */
 .login-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 20px;
-    padding: 48px 56px;
+    /* 响应式：宽度与内边距随视口缩放，浏览器放大/缩小时不再错位 */
+    padding: clamp(20px, 4.5vw, 48px) clamp(18px, 5vw, 56px);
     box-shadow: 0 4px 20px rgba(0,0,0,0.1), 0 4px 40px rgba(0,0,0,0.05);
-    max-width: 460px;
-    width: 100%;
+    width: min(100%, 460px);
+    margin-inline: auto;
+    box-sizing: border-box;
     text-align: center;
 }
 .login-logo {
-    font-family: 'Orbitron', monospace;
-    font-size: 1.8rem;
+    font-family: 'Inter', sans-serif;
+    font-size: clamp(1.35rem, 1.05rem + 1.5vw, 1.8rem);
     font-weight: 900;
     letter-spacing: 0.08em;
     color: var(--accent-blue);
@@ -770,7 +790,7 @@ h1, h2, h3 {
 .login-divider {
     height: 1px;
     background: linear-gradient(90deg, transparent, var(--accent-blue), transparent);
-    margin: 24px 0;
+    margin: clamp(14px, 3vh, 24px) 0;
     opacity: 0.4;
 }
 
@@ -885,19 +905,18 @@ def render_login():
             return False
         return saved_pwd == pwd
 
-    # Center using columns
-    _, center, _ = st.columns([1, 1.4, 1])
-    with center:
+    # 居中容器：key 会生成 .st-key-login_shell 类，宽度与内边距由 CSS 响应式控制
+    # （原来用 st.columns([1, 1.4, 1]) + 固定 60px 占位，浏览器缩放时会错位）
+    with st.container(key="login_shell", horizontal_alignment="center"):
         st.markdown("""
-        <div style="height:60px"></div>
         <div class="login-card">
             <div class="login-logo">&#9651; DriveSafe</div>
-            <div style="font-family:'Orbitron',monospace;font-size:0.78rem;
+            <div style="font-family:'Inter',sans-serif;font-size:0.78rem;
                         letter-spacing:0.18em;color:#6b7a99;margin-bottom:2px;">
                 智驭安DriveSafe智能驾驶风险预警系统
             </div>
             <div class="login-divider"></div>
-            <div style="font-family:'Share Tech Mono',monospace;font-size:0.68rem;
+            <div style="font-family:'JetBrains Mono',monospace;font-size:0.68rem;
                         letter-spacing:0.2em;color:#00bfff;text-align:center;
                         margin-bottom:6px;">用户认证</div>
         </div>
@@ -925,7 +944,7 @@ def render_login():
 
             if st.session_state.login_error:
                 st.markdown("""
-                <div style="margin-top:12px;font-family:'Share Tech Mono',monospace;
+                <div style="margin-top:12px;font-family:'JetBrains Mono',monospace;
                             font-size:0.75rem;color:#e8303a;letter-spacing:0.1em;
                             text-align:center;">
                     访问被拒绝 — 凭证无效
@@ -965,7 +984,7 @@ def render_login():
                             st.error(f"注册失败：{exc}")
 
         st.markdown("""
-        <div style="margin-top:28px;font-family:'Share Tech Mono',monospace;
+        <div style="margin-top:28px;font-family:'JetBrains Mono',monospace;
                     font-size:0.62rem;color:#3a4560;letter-spacing:0.16em;
                     text-align:center;border-top:1px solid rgba(0,191,255,0.1);
                     padding-top:16px;">
@@ -998,19 +1017,19 @@ def render_sidebar():
         st.markdown("""
         <div class="section-header">系统状态</div>
         <div style="display:flex;justify-content:space-between;align-items:center;
-                    padding:8px 4px;font-family:'Share Tech Mono',monospace;
+                    padding:8px 4px;font-family:'JetBrains Mono',monospace;
                     font-size:0.78rem;color:#6b7a99;">
             <span>AI引擎</span>
             <span class="status-badge badge-online">在线</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;
-                    padding:8px 4px;font-family:'Share Tech Mono',monospace;
+                    padding:8px 4px;font-family:'JetBrains Mono',monospace;
                     font-size:0.78rem;color:#6b7a99;">
             <span>GPU加速</span>
             <span class="status-badge badge-warning">待命</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;
-                    padding:8px 4px;font-family:'Share Tech Mono',monospace;
+                    padding:8px 4px;font-family:'JetBrains Mono',monospace;
                     font-size:0.78rem;color:#6b7a99;">
             <span>深度排序</span>
             <span class="status-badge badge-online">就绪</span>
@@ -1067,7 +1086,7 @@ def render_sidebar():
         st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown("""
-        <div style="margin-top:24px;font-family:'Share Tech Mono',monospace;
+        <div style="margin-top:24px;font-family:'JetBrains Mono',monospace;
                     font-size:0.58rem;color:#2a3448;letter-spacing:0.14em;
                     text-align:center;">
             (C) 2026 智驭安智能科技
@@ -1118,19 +1137,19 @@ def render_metrics(placeholder=None):
         <div style="flex: 1; background: var(--bg-card); border: 1px solid var(--border); 
                     border-radius: 12px; padding: 8px 10px; text-align: center;
                     box-shadow: 0 0 20px rgba(0,191,255,0.06);">
-            <div style="font-family: 'Share Tech Mono', monospace; font-size: 0.44rem; 
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.44rem; 
                         color: #00e5ff; letter-spacing: 0.1em; text-transform: uppercase;
                         margin-bottom: 3px;">目标追踪数</div>
-            <div style="font-family: 'Orbitron', monospace; font-size: 0.96rem; 
+            <div style="font-family: 'Inter', sans-serif; font-size: 0.96rem; 
                         font-weight: 800; color: #e8eaf0;">""" + track_count + """</div>
         </div>
         <div style="flex: 1; background: var(--bg-card); border: 1px solid var(--border); 
                     border-radius: 12px; padding: 8px 10px; text-align: center;
                     box-shadow: 0 0 20px rgba(0,191,255,0.06);">
-            <div style="font-family: 'Share Tech Mono', monospace; font-size: 0.44rem; 
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.44rem; 
                         color: #00e5ff; letter-spacing: 0.1em; text-transform: uppercase;
                         margin-bottom: 3px;">告警次数</div>
-            <div style="font-family: 'Orbitron', monospace; font-size: 0.96rem; 
+            <div style="font-family: 'Inter', sans-serif; font-size: 0.96rem; 
                         font-weight: 800; color: #e8eaf0;">""" + alert_count + """</div>
         </div>
     </div>
@@ -1179,11 +1198,11 @@ def render_risk_overview(placeholder=None):
     risk_html = f"""
     <div style="background: var(--bg-card); border: 1px solid var(--border); 
                 border-radius: 12px; padding: 8px; text-align: center; height: 100%;">
-        <div style="font-family: 'Orbitron', monospace; font-size: 1.16rem; 
+        <div style="font-family: 'Inter', sans-serif; font-size: 1.16rem; 
                     font-weight: 900; color: {risk_color};">
             {risk_index:.3f}
         </div>
-        <div style="font-family: 'Share Tech Mono', monospace; font-size: 0.44rem; 
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.44rem; 
                     color: #aaddff; margin-top: 2px;">
             风险指数
         </div>
@@ -1192,11 +1211,11 @@ def render_risk_overview(placeholder=None):
                 <div class="risk-bar-fill" style="width: {risk_progress}%;"></div>
             </div>
         </div>
-        <div style="margin-top: 5px; font-family: 'Orbitron', monospace; 
+        <div style="margin-top: 5px; font-family: 'Inter', sans-serif; 
                     font-size: 0.56rem; color: {risk_color};">
             {risk_text}
         </div>
-        <div style="margin-top: 6px; font-family: 'Share Tech Mono', monospace; 
+        <div style="margin-top: 6px; font-family: 'JetBrains Mono', monospace; 
                     font-size: 0.44rem; color: #aabbcc;">
             跟踪目标数: {stats['track_count']}<br>
             平均风险: {avg_risk:.4f}
@@ -1231,7 +1250,7 @@ def render_risk_trend(placeholder=None):
                 '<div style="background:var(--bg-card);border:1px solid var(--border);'
                 'border-radius:12px;height:168px;display:flex;align-items:center;'
                 'justify-content:center;text-align:center;">'
-                '<span style="font-family:Share Tech Mono,monospace;color:#6b7a99;">'
+                '<span style="font-family:JetBrains Mono,monospace;color:#6b7a99;">'
                 '等待风险趋势数据...</span></div>',
                 unsafe_allow_html=True
             )
@@ -1279,8 +1298,8 @@ def render_risk_trend(placeholder=None):
             gridColor="#1b3444",
             domainColor="#26495f",
             tickColor="#26495f",
-            labelFont="Share Tech Mono",
-            titleFont="Share Tech Mono"
+            labelFont="JetBrains Mono",
+            titleFont="JetBrains Mono"
         ).configure_view(
             stroke=None
         ).configure(
@@ -1312,7 +1331,7 @@ def render_dashboard():
     with h_col2:
         now = time.strftime("%Y-%m-%d  %H:%M:%S")
         st.markdown(f"""
-        <div style="text-align:right;font-family:'Share Tech Mono',monospace;
+        <div style="text-align:right;font-family:'JetBrains Mono',monospace;
                     font-size:0.72rem;color:#6b7a99;letter-spacing:0.1em;
                     padding-top:6px;">
             {now}<br>
@@ -1367,7 +1386,7 @@ def render_dashboard():
             video_placeholder.markdown(
                 '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;'
                 'height:320px;display:flex;align-items:center;justify-content:center;text-align:center;">'
-                '<span style="font-family:Share Tech Mono,monospace;color:#6b7a99;">等待视频源...</span>'
+                '<span style="font-family:JetBrains Mono,monospace;color:#6b7a99;">等待视频源...</span>'
                 '</div>',
                 unsafe_allow_html=True
             )
@@ -1384,7 +1403,7 @@ def render_dashboard():
             risk_placeholder.markdown(
                 '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;'
                 'height:320px;display:flex;align-items:center;justify-content:center;text-align:center;">'
-                '<span style="font-family:Share Tech Mono,monospace;color:#99aabb;">等待风险数据...</span>'
+                '<span style="font-family:JetBrains Mono,monospace;color:#99aabb;">等待风险数据...</span>'
                 '</div>',
                 unsafe_allow_html=True
             )
@@ -1402,7 +1421,7 @@ def render_dashboard():
     # ── Footer ──
     st.markdown("""
     <div style="margin-top:32px;padding-top:16px;border-top:1px solid rgba(0,191,255,0.1);
-                font-family:'Share Tech Mono',monospace;font-size:0.7rem;
+                font-family:'JetBrains Mono',monospace;font-size:0.7rem;
                 color:#667788;letter-spacing:0.16em;text-align:center;">
         DRIVESAFE 智能驾驶风险预警系统 &nbsp;|&nbsp; YOLOV10S + DEEPSORT + 3D风险引擎
         &nbsp;|&nbsp; (C) 2026 智驭安智能科技
@@ -1471,7 +1490,7 @@ def render_dashboard():
                 progress = (frame_idx + 1) / total_frames
                 progress_bar.progress(min(progress, 1.0))
                 status_text.markdown(
-                    f"<span style='font-family:Share Tech Mono,monospace;"
+                    f"<span style='font-family:JetBrains Mono,monospace;"
                     f"font-size:0.72rem;color:#00bfff;'>"
                     f"处理中: {frame_idx + 1} / {total_frames}</span>",
                     unsafe_allow_html=True
@@ -1532,17 +1551,17 @@ def render_realtime_panel():
             <div style="background: var(--bg-card); border: 1px solid var(--border); 
                         border-radius: 8px; padding: 12px; margin-bottom: 8px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-family: 'Share Tech Mono', monospace; color: #00bfff; font-size: 1.1rem; font-weight: bold;">
+                    <span style="font-family: 'JetBrains Mono', monospace; color: #00bfff; font-size: 1.1rem; font-weight: bold;">
                         ID: {obj.track_id} | {obj.class_name}
                     </span>
-                    <span style="font-family: 'Orbitron', monospace; font-size: 0.8rem; 
+                    <span style="font-family: 'Inter', sans-serif; font-size: 0.8rem; 
                                 color: {risk_color}; border: 1px solid {risk_color}; 
                                 padding: 4px 12px; border-radius: 4px;">
                         {obj.risk_level}
                     </span>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-top: 12px; 
-                            font-family: 'Share Tech Mono', monospace; font-size: 0.9rem; color: #6b7a99;">
+                            font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; color: #6b7a99;">
                     <span style="flex: 1;">距离: {obj.distance:.2f}m</span>
                     <span style="flex: 1;">速度: {obj.speed:.1f} km/h</span>
                     <span style="flex: 1;">风险类型: {obj.risk_type}</span>
@@ -1555,7 +1574,7 @@ def render_realtime_panel():
         st.markdown("""
         <div style="background: var(--bg-card); border: 1px solid var(--border); 
                     border-radius: 12px; padding: 40px; text-align: center;">
-            <span style="font-family: 'Share Tech Mono', monospace; color: #6b7a99;">
+            <span style="font-family: 'JetBrains Mono', monospace; color: #6b7a99;">
                 等待检测数据...
             </span>
         </div>
