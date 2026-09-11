@@ -1,14 +1,25 @@
 # DriveSafe 主题配置
 #
-# 字体统一在这里声明（Google Fonts），不要在自定义 CSS 里另立一套 ——
-# 之前 app.py 顶部 @import 了 Orbitron / Rajdhani / Share Tech Mono，
-# 现在统一改为：
-#   UI / 正文 / 标题：Inter        （当前最主流的现代 UI 字体）
-#   等宽与数字读数    ：JetBrains Mono
+# 约定：颜色与字体一律在这里声明（Streamlit 原生主题），不要在自定义 CSS 里另立一套 ——
+# 自定义 CSS 只负责 HUD 风格的细节（发光、网格、卡片装饰）。
 #
-# 说明：改动本文件后刷新页面即可生效；若改了 fontFaces（自托管字体）需重启服务。
+# 字体：
+#   UI / 正文 / 标题：Inter（Google Fonts，当前最主流的现代 UI 字体）
+#   等宽与数字读数    ：JetBrains Mono
+# 颜色：与 app.py 的 DARK_CSS / LIGHT_CSS 调色板一一对应，避免"深色页面里冒出白色原生部件"
+#       （文件上传框、图表画布、输入框等原生部件的底色由这里决定，CSS 改不动它们）
+#
+# 说明：改本文件后刷新页面生效；fontFaces（自托管字体）才需要重启服务。
 
 [theme]
+base = "dark"
+primaryColor = "#00bfff"
+backgroundColor = "#0a0c10"
+secondaryBackgroundColor = "#111620"
+textColor = "#e8eaf0"
+borderColor = "#1b3444"
+linkColor = "#00bfff"
+
 font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
 headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap"
 codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap"
@@ -16,3 +27,13 @@ codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+
 baseFontWeight = 400
 codeFontWeight = 400
 headingFontWeights = [700, 600, 600, 600, 600, 600]
+
+# 用户在 Streamlit 菜单（Settings → Theme）切到浅色时，
+# 原生部件的配色与 app.py 的 LIGHT_CSS 对齐
+[theme.light]
+primaryColor = "#007bff"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f8f9fa"
+textColor = "#212529"
+borderColor = "#d7dbe0"
+linkColor = "#007bff"

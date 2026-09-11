@@ -173,7 +173,7 @@ h1, h2, h3 {
 [data-testid="metric-container"] label {
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.85rem !important;
-    color: #00e5ff !important;
+    color: var(--accent-blue) !important;
     letter-spacing: 0.1em !important;
     text-transform: uppercase !important;
 }
@@ -426,36 +426,19 @@ h1, h2, h3 {
     background: var(--accent-red) !important;
     color: #fff !important;
 }
-/* ── FileUploader 全部强制白色 ── */
-[data-testid="stFileUploader"] {
-    color: #ffffff !important;
-}
-
+/* ── FileUploader：文字颜色跟随主题变量 ──
+   原先是"全部强制白色 + 文件名强制亮蓝"，但组件底色由 Streamlit 原生主题决定，
+   原生主题为浅色时就成了白底白字（文件名几乎看不见）。
+   现在底色由 .streamlit/config.toml 的 [theme] 决定，文字用主题变量，明暗都清晰。 */
+[data-testid="stFileUploader"],
 [data-testid="stFileUploader"] * {
-    color: #ffffff !important;
+    color: var(--text-primary) !important;
 }
 
-/* 文件名 */
+/* 文件名用强调色 */
 [data-testid="stFileUploader"] span {
-    color: #ffffff !important;
-}
-
-/* 文件大小 */
-[data-testid="stFileUploader"] small {
-    color: #ffffff !important;
-}
-
-/* 防止被 markdown 或 label 覆盖 */
-[data-testid="stFileUploader"] label,
-[data-testid="stFileUploader"] div,
-[data-testid="stFileUploader"] p {
-    color: #ffffff !important;
-}
-/* ── 文件名改成蓝色（只改这一行） ── */
-[data-testid="stFileUploader"] span {
-    color: #00e5ff !important;   /* 亮科技蓝 */
+    color: var(--accent-blue) !important;
     font-weight: 600 !important;
-    text-shadow: 0 0 6px rgba(0,191,255,0.6); /* 可选：发光 */
 }
 
 /* Hide Streamlit native chrome */
@@ -912,7 +895,7 @@ def render_login():
         <div class="login-card">
             <div class="login-logo">&#9651; DriveSafe</div>
             <div style="font-family:'Inter',sans-serif;font-size:0.78rem;
-                        letter-spacing:0.18em;color:#6b7a99;margin-bottom:2px;">
+                        letter-spacing:0.18em;color:var(--text-muted);margin-bottom:2px;">
                 智驭安DriveSafe智能驾驶风险预警系统
             </div>
             <div class="login-divider"></div>
@@ -1018,19 +1001,19 @@ def render_sidebar():
         <div class="section-header">系统状态</div>
         <div style="display:flex;justify-content:space-between;align-items:center;
                     padding:8px 4px;font-family:'JetBrains Mono',monospace;
-                    font-size:0.78rem;color:#6b7a99;">
+                    font-size:0.78rem;color:var(--text-muted);">
             <span>AI引擎</span>
             <span class="status-badge badge-online">在线</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;
                     padding:8px 4px;font-family:'JetBrains Mono',monospace;
-                    font-size:0.78rem;color:#6b7a99;">
+                    font-size:0.78rem;color:var(--text-muted);">
             <span>GPU加速</span>
             <span class="status-badge badge-warning">待命</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;
                     padding:8px 4px;font-family:'JetBrains Mono',monospace;
-                    font-size:0.78rem;color:#6b7a99;">
+                    font-size:0.78rem;color:var(--text-muted);">
             <span>深度排序</span>
             <span class="status-badge badge-online">就绪</span>
         </div>
@@ -1138,19 +1121,19 @@ def render_metrics(placeholder=None):
                     border-radius: 12px; padding: 8px 10px; text-align: center;
                     box-shadow: 0 0 20px rgba(0,191,255,0.06);">
             <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.44rem; 
-                        color: #00e5ff; letter-spacing: 0.1em; text-transform: uppercase;
+                        color: var(--accent-blue); letter-spacing: 0.1em; text-transform: uppercase;
                         margin-bottom: 3px;">目标追踪数</div>
             <div style="font-family: 'Inter', sans-serif; font-size: 0.96rem; 
-                        font-weight: 800; color: #e8eaf0;">""" + track_count + """</div>
+                        font-weight: 800; color: var(--text-primary);">""" + track_count + """</div>
         </div>
         <div style="flex: 1; background: var(--bg-card); border: 1px solid var(--border); 
                     border-radius: 12px; padding: 8px 10px; text-align: center;
                     box-shadow: 0 0 20px rgba(0,191,255,0.06);">
             <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.44rem; 
-                        color: #00e5ff; letter-spacing: 0.1em; text-transform: uppercase;
+                        color: var(--accent-blue); letter-spacing: 0.1em; text-transform: uppercase;
                         margin-bottom: 3px;">告警次数</div>
             <div style="font-family: 'Inter', sans-serif; font-size: 0.96rem; 
-                        font-weight: 800; color: #e8eaf0;">""" + alert_count + """</div>
+                        font-weight: 800; color: var(--text-primary);">""" + alert_count + """</div>
         </div>
     </div>
     """
@@ -1250,7 +1233,7 @@ def render_risk_trend(placeholder=None):
                 '<div style="background:var(--bg-card);border:1px solid var(--border);'
                 'border-radius:12px;height:168px;display:flex;align-items:center;'
                 'justify-content:center;text-align:center;">'
-                '<span style="font-family:JetBrains Mono,monospace;color:#6b7a99;">'
+                '<span style="font-family:JetBrains Mono,monospace;color:var(--text-muted);">'
                 '等待风险趋势数据...</span></div>',
                 unsafe_allow_html=True
             )
@@ -1281,12 +1264,14 @@ def render_risk_trend(placeholder=None):
         )
 
         line = base.mark_line(color="#00bfff", strokeWidth=2, opacity=0.9)
+        # 数据点用琥珀色实心 + 白描边：深色底和白色底上都清晰
+        # （原来是白色点，浅色主题下白底白点等于看不见）
         points = base.mark_circle(
-            size=26,
-            color="#ffffff",
+            size=52,
+            color="#ffb300",
             stroke="#ffffff",
-            strokeWidth=1.0,
-            opacity=0.95
+            strokeWidth=1.5,
+            opacity=1.0
         )
 
         chart = (line + points).add_params(
@@ -1332,7 +1317,7 @@ def render_dashboard():
         now = time.strftime("%Y-%m-%d  %H:%M:%S")
         st.markdown(f"""
         <div style="text-align:right;font-family:'JetBrains Mono',monospace;
-                    font-size:0.72rem;color:#6b7a99;letter-spacing:0.1em;
+                    font-size:0.72rem;color:var(--text-muted);letter-spacing:0.1em;
                     padding-top:6px;">
             {now}<br>
             <span style="color:#00e5a0;">&#9679;</span> 系统运行中
@@ -1386,7 +1371,7 @@ def render_dashboard():
             video_placeholder.markdown(
                 '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;'
                 'height:320px;display:flex;align-items:center;justify-content:center;text-align:center;">'
-                '<span style="font-family:JetBrains Mono,monospace;color:#6b7a99;">等待视频源...</span>'
+                '<span style="font-family:JetBrains Mono,monospace;color:var(--text-muted);">等待视频源...</span>'
                 '</div>',
                 unsafe_allow_html=True
             )
