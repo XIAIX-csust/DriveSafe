@@ -109,58 +109,83 @@ class DepthEstimator:
     def estimate_depth(self, image):
         """
         Estimate depth from an image
-        
+
         Args:
             image (numpy.ndarray): Input image (BGR format)
-            
+
         Returns:
-            numpy.ndarray: Depth map (normalized to 0-1)
+            numpy.ndarray: Depth map, float32, normalized to 0-1, 尺寸与原图一致
         """
         # Convert BGR to RGB
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        
+
         # Convert to PIL Image
         pil_image = Image.fromarray(image_rgb)
-        
+
+        target_hw = image.shape[:2]
+
         # Get depth map
         try:
             depth_result = self.pipe(pil_image)
-            depth_map = depth_result["depth"]
-            
-            # Convert PIL Image to numpy array if needed
-            if isinstance(depth_map, Image.Image):
-                depth_map = np.array(depth_map)
-            elif isinstance(depth_map, torch.Tensor):
-                depth_map = depth_map.cpu().numpy()
         except RuntimeError as e:
             # Handle potential MPS errors during inference
             if self.device == 'mps':
                 print(f"MPS error during depth estimation: {e}")
                 print("Temporarily falling back to CPU for this frame")
-                # Create a CPU pipeline for this frame
                 cpu_pipe = pipeline(task="depth-estimation", model=self.pipe.model.config._name_or_path, device='cpu')
                 depth_result = cpu_pipe(pil_image)
-                depth_map = depth_result["depth"]
-                
-                # Convert PIL Image to numpy array if needed
-                if isinstance(depth_map, Image.Image):
-                    depth_map = np.array(depth_map)
-                elif isinstance(depth_map, torch.Tensor):
-                    depth_map = depth_map.cpu().numpy()
             else:
                 # Re-raise the error if not MPS
                 raise
-        
-        # Normalize depth map to 0-1
-        depth_min = depth_map.min()
-        depth_max = depth_map.max()
-        if depth_max > depth_min:
-            depth_map = (depth_map - depth_min) / (depth_max - depth_min)
+
+        depth_map = self._to_normalized_depth(depth_result, target_hw)
 
         # 缓存最近一次结果（供异步 worker / 外部复用）
         self.last_depth_map = depth_map
 
         return depth_map
+
+    @staticmethod
+    def _to_normalized_depth(depth_result, target_hw=None):
+        """把 pipeline 输出转成 0-1 的 float32 深度图。
+
+        优先使用模型的原生 float 预测 ``predicted_depth``（约 518×518）：
+          - 避免 pipeline 把结果量化成 8bit PIL（只有 256 级，而实测有效区间只占
+            0.03~0.18，等价于仅约 38 级用于区分所有距离）；
+          - 避免 pipeline 用双三次插值放大到原分辨率（1906×1080 ≈ 206 万像素）后
+            我们只取 bbox 中心小区域、99% 的插值像素被丢弃。
+        归一化在低分辨率上完成（更省），再自行缩放到原图尺寸（cv2 比 PIL 快），
+        从而保持下游（bbox 采样 / 路面分析）坐标语义不变。
+        """
+        raw = None
+        if isinstance(depth_result, dict):
+            raw = depth_result.get("predicted_depth")
+
+        if isinstance(raw, torch.Tensor):
+            arr = raw.detach().to(torch.float32).cpu().numpy()
+        elif raw is not None:
+            arr = np.asarray(raw, dtype=np.float32)
+        else:
+            # 回退：老路径（uint8 PIL 图）
+            legacy = depth_result["depth"] if isinstance(depth_result, dict) else depth_result
+            arr = np.array(legacy) if isinstance(legacy, Image.Image) else np.asarray(legacy)
+            arr = arr.astype(np.float32)
+
+        if arr.ndim == 3:          # (1, H, W) -> (H, W)
+            arr = arr[0]
+
+        depth_min = float(arr.min())
+        depth_max = float(arr.max())
+        if depth_max > depth_min:
+            arr = (arr - depth_min) / (depth_max - depth_min)
+        else:
+            arr = np.zeros_like(arr, dtype=np.float32)
+
+        if target_hw is not None and tuple(arr.shape[:2]) != tuple(target_hw):
+            arr = cv2.resize(arr, (int(target_hw[1]), int(target_hw[0])),
+                             interpolation=cv2.INTER_LINEAR)
+
+        return np.ascontiguousarray(arr, dtype=np.float32)
     
     def colorize_depth(self, depth_map, cmap=cv2.COLORMAP_INFERNO):
         """

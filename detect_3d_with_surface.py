@@ -23,10 +23,6 @@ import torch.backends.cudnn as cudnn
 import cv2
 import os
 from PIL import Image
-from pylab import *
-from matplotlib.pyplot import ginput, ion, ioff
-import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
 from collections import defaultdict
 
 # 新增引用：YOLO-3D 核心模块
