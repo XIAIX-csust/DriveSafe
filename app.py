@@ -1221,7 +1221,7 @@ def render_risk_trend(placeholder=None):
 
     # 默认只显示最近 WINDOW 帧，避免点越积越多糊成一片；
     # 更早的点不删除，仍在图表数据里，拖动/滚轮即可回看
-    WINDOW = 200
+    WINDOW = 150
 
     def _render():
         trend = data_store.get_risk_trend()
