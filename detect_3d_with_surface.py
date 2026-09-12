@@ -880,10 +880,16 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--view-img', dest='view_img', action='store_true', help='display results')
     parser.add_argument('--no-view-img', dest='view_img', action='store_false', help='disable display results')
-    parser.set_defaults(view_img=True, save_jsonl=True)
+    # nosave=True：默认不写标注视频（如需保存显式加 --save）
+    parser.set_defaults(view_img=True, save_jsonl=True, nosave=True)
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
-    parser.add_argument('--nosave', action='store_true', help='do not save images/videos')
+    # 默认不保存标注视频：1080p 逐帧编码是纯 CPU 开销（20~50ms/帧），对帧率影响很大，
+    # 而 GPU 完全帮不上忙。需要保存时显式加 --save；--nosave 保留以兼容旧命令（现即默认）。
+    parser.add_argument('--save', dest='nosave', action='store_false',
+                        help='save annotated images/videos (默认关闭)')
+    parser.add_argument('--nosave', dest='nosave', action='store_true',
+                        help='do not save images/videos (默认行为)')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')

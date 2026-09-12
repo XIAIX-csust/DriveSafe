@@ -106,8 +106,11 @@ streamlit run app.py
 ### 2. 运行带路面检测的检测
 
 ```bash
-python detect_3d_with_surface.py --source lanechange.mp4 --no-view-img --nosave --device cpu
+python detect_3d_with_surface.py --source lanechange.mp4 --no-view-img --device cpu
 ```
+
+> 默认**不保存**标注视频（逐帧 1080p 编码是纯 CPU 开销，20~50ms/帧，明显拖低帧率）；需要保存时加 `--save`。
+> 默认会弹 OpenCV 窗口显示（`--no-view-img` 关闭）；基准测试建议关掉窗口与保存，只留结构化 JSONL。
 
 可选参数：`--fps 25` 固定帧率节拍（默认）、`--no-pacing` 关闭节拍、`--no-depth-async` 关闭深度异步、`--depth-onnx` 使用 ONNX 深度后端、`--road-roi-top 0.5` 路面模型 ROI 起点（0 表示整幅，越小保留越多画面上部）、`--no-road-parallel` 关闭主/辅路面模型并行。
 
