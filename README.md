@@ -112,7 +112,21 @@ python detect_3d_with_surface.py --source lanechange.mp4 --no-view-img --device 
 > 默认**不保存**标注视频（逐帧 1080p 编码是纯 CPU 开销，20~50ms/帧，明显拖低帧率）；需要保存时加 `--save`。
 > 默认会弹 OpenCV 窗口显示（`--no-view-img` 关闭）；基准测试建议关掉窗口与保存，只留结构化 JSONL。
 
-可选参数：`--fps 25` 固定帧率节拍（默认）、`--no-pacing` 关闭节拍、`--no-depth-async` 关闭深度异步、`--depth-onnx` 使用 ONNX 深度后端、`--road-roi-top 0.5` 路面模型 ROI 起点（0 表示整幅，越小保留越多画面上部）、`--no-road-parallel` 关闭主/辅路面模型并行。
+可选参数：`--fps 25` 固定帧率节拍（默认）、`--no-pacing` 关闭节拍、`--no-depth-async` 关闭深度异步、`--depth-onnx` 使用 ONNX 深度后端、`--road-roi-top 0.5` 路面模型 ROI 起点、`--no-road-parallel` 关闭主/辅路面模型并行、`--draw-every 2` BEV 重绘间隔（1=每帧重绘）、`--save` 保存标注视频（默认关）。
+
+#### 性能开关一览（默认值就是"已经调过"的状态）
+
+| 开关 / 机制 | 默认 | 作用与实测 |
+|---|---|---|
+| `--nosave`（默认）/ `--save` | **不保存** | 逐帧 1080p 编码是纯 CPU 开销（20–50ms/帧），GPU 帮不上忙 |
+| `--draw-every N` | **2** | BEV（热力图/网格/目标框/HUD/轨迹）每 N 帧重绘，中间帧复用上一帧图像；10 帧实测绘制类 55.1 → 46.6 ms/帧 |
+| `--view-img`（默认）/ `--no-view-img` | 开窗口 | 开窗口时每帧额外 resize + hstack + imshow；基准测试建议关掉 |
+| `--road-roi-top` | **0.5** | 只把画面下半部送路面模型；代价是画面上半部的远处缺陷看不到 |
+| 主路面模型节奏 | **1/2 帧** | `RoadSurfaceDetector.frame_skip = 2`（代码内常量） |
+| 裂缝(aux)模型节奏 | **1/4 帧** | `aux_frame_skip = 2`（在主模型节奏之上再隔一次） |
+| `analyze()` 后处理 | **1/2 帧** | 与主模型同步（`last_run_fresh` 标记）；未刷新帧复用上一帧分析结果 |
+| `--no-depth-async` | 异步 | 深度在独立线程 + CUDA stream，只保最新帧；算不过来就丢帧（距离值最多滞后一个深度周期） |
+| `--fps` / `--no-pacing` | 25fps 节拍 | 帧率写死不动态调整；积压时丢帧，而不是降分辨率/精度 |
 
 ### 3. FPS 基准测试（上板调参用）
 
