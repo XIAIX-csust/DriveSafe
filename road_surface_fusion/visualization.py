@@ -61,6 +61,11 @@ class RoadSurfaceVisualizer:
         return annotated
 
     def draw_on_bev(self, bev_visualizer, analysis: SurfaceAnalysisResult) -> None:
+        # BEV 绘制度频：非重绘帧直接跳过。
+        # 本方法绕过 bev_visualizer 的绘制方法、直接改 canvas，
+        # 必须在这里也判一次，否则会在"复用帧"上继续改动上一帧的缓存图。
+        if not getattr(bev_visualizer, "_do_draw", True):
+            return
         canvas = bev_visualizer.bev_image
         for hazard in analysis.hazards:
             px = bev_visualizer.origin_x + int(hazard.x_m * bev_visualizer.scale)

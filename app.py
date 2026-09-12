@@ -45,6 +45,8 @@ class DummyOpt:
         # 路面模型 ROI（只看画面下方该比例以上；0=整幅）与主/辅模型并行开关
         self.road_roi_top = 0.5
         self.no_road_parallel = False
+        # BEV 重绘间隔（帧）：2 = 每 2 帧重绘一次，中间帧复用上一帧图像
+        self.draw_every = 2
         self.max_frames = None
         self.save_jsonl = False
         self.structured_dir = 'structured'
@@ -1433,7 +1435,8 @@ def render_dashboard():
         progress_bar = st.sidebar.progress(0)
         status_text = st.sidebar.empty()
 
-        def callback(im0, risk_img, frame_idx=None, total_frames=None, risk_sources=None, frame_risk=None):
+        def callback(im0, risk_img, frame_idx=None, total_frames=None, risk_sources=None,
+                     frame_risk=None, risk_updated=True):
             import streamlit as st
             from data_store import data_store
 
@@ -1446,7 +1449,9 @@ def render_dashboard():
                 if frame_idx is not None:
                     st.session_state.frames_processed = frame_idx + 1
 
-            if risk_img is not None:
+            # risk_updated=False 表示 BEV 复用了上一帧图像（--draw-every 降频），
+            # 内容和上次一样，不必再编码/传输一次
+            if risk_img is not None and risk_updated:
                 risk_rgb = cv2.cvtColor(risk_img, cv2.COLOR_BGR2RGB)
                 risk_rgb = cv2.resize(risk_rgb, (640, 320), interpolation=cv2.INTER_LINEAR)
                 risk_placeholder.image(risk_rgb, channels="RGB", use_container_width=True)

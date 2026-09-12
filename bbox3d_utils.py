@@ -739,15 +739,26 @@ class BirdEyeView:
     """
     Bird's Eye View visualization
     """
-    def __init__(self, size=(400, 600), scale=25, camera_height=1.2):
+    def __init__(self, size=(400, 600), scale=25, camera_height=1.2, redraw_every: int = 1):
         """
         Initialize the Bird's Eye View visualizer
+
+        redraw_every: BEV 重绘间隔（帧）。1 = 每帧重绘（旧行为）；
+            >1 时只在第 N 帧真正绘制，其余帧直接复用上一帧图像，
+            省掉热力图/模糊/等高线/网格等每帧 CPU 开销（实测约 28ms/帧）。
         """
         self.width, self.height = size
         self.base_scale = scale
         self.scale = scale
         self.camera_height = camera_height
-        
+
+        # 绘制度频状态
+        self.redraw_every = max(1, int(redraw_every or 1))
+        self._reset_count = -1           # reset() 被调用次数（每帧一次）
+        self._do_draw = True             # 本帧是否需要真正绘制
+        self._cached_image = None        # 上一帧画好的 BEV（复用时直接返回）
+        self.last_draw_was_fresh = True  # 供上层判断要不要把这张图再推给界面
+
         # Default Origin
         # Move origin significantly up so the radar field sits exactly in the visual center (the red box area)
         self.origin_x = self.width // 2
@@ -783,6 +794,18 @@ class BirdEyeView:
         """
         Reset the BEV image
         """
+        # 绘制度频（redraw_every）：非重绘帧不重建画布、后续绘制调用全部跳过，
+        # get_image() 会返回上一帧图像（内容滞后 ≤ redraw_every-1 帧，观感无差别）
+        self._reset_count += 1
+        self._do_draw = (
+            self._cached_image is None
+            or self.redraw_every <= 1
+            or (self._reset_count % self.redraw_every == 0)
+        )
+        self.last_draw_was_fresh = self._do_draw
+        if not self._do_draw:
+            return
+
         # Create a dark background
         self.bev_image = np.zeros((self.height, self.width, 3), dtype=np.uint8)
         self.bev_image[:, :] = (10, 10, 15)  # Very dark blue-gray background
@@ -833,6 +856,8 @@ class BirdEyeView:
             color (tuple): Color in BGR format (None for automatic color based on class)
             risk_score (float): Risk value for the object
         """
+        if not self._do_draw:      # 非重绘帧：直接跳过（复用上一帧图像）
+            return
         try:
             # Extract parameters
             class_name = box_3d['class_name'].lower()
@@ -1009,16 +1034,21 @@ class BirdEyeView:
     def get_image(self):
         """
         Get the BEV image
-        
+
         Returns:
-            numpy.ndarray: BEV image
+            numpy.ndarray: BEV image（非重绘帧返回上一帧缓存）
         """
+        if not self._do_draw and self._cached_image is not None:
+            return self._cached_image
+        self._cached_image = self.bev_image
         return self.bev_image
 
     def draw_risk_heatmap(self, risk_map):
         """
         Draw risk heatmap with contours and enhanced glow (Radar-like).
         """
+        if not self._do_draw:      # 非重绘帧：跳过（热力图/模糊/等高线是最贵的一项）
+            return
         if risk_map is None: return
 
         # 1. Normalize and Colorize
@@ -1131,6 +1161,8 @@ class BirdEyeView:
         """
         Draw predictive future sector.
         """
+        if not self._do_draw:      # 非重绘帧：跳过
+            return
         # Convert to pixels
         # x_meter is relative to center? No, absolute in field.
         # Our BEV origin_x is center. x_meter=0 -> origin_x.
@@ -1169,6 +1201,8 @@ class BirdEyeView:
         Draw trajectory with fading effect.
         track_history: list of (x, z) in meters
         """
+        if not self._do_draw:      # 非重绘帧：跳过
+            return
         if len(track_history) < 2: return
         
         points = []
@@ -1197,6 +1231,8 @@ class BirdEyeView:
         """
         Draw Head-Up Display elements.
         """
+        if not self._do_draw:      # 非重绘帧：跳过
+            return
         # Top-left: Ego Info
         cv2.putText(self.bev_image, f"EGO SPEED: {ego_speed:.1f} km/h", (10, 20),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)

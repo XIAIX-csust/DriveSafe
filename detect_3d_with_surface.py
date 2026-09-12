@@ -345,7 +345,24 @@ def detect(save_img=False, callback=None):
     
     # BEV 视图：宽400px，高600px (对应16m x 24m => 25 px/m)
     # 稍微调整高度以匹配比例
-    bev_visualizer = BirdEyeView(size=(400, 625), scale=25, camera_height=1.5)
+    # A：BEV 绘制度频（默认每 2 帧重绘一次，中间帧复用上一帧图像）——
+    # 热力图(含高斯模糊/等高线)+网格+目标框+HUD 合计约 28ms/帧，是纯 CPU 开销。
+    draw_every = max(1, int(getattr(opt, 'draw_every', 2) or 1))
+    bev_visualizer = BirdEyeView(size=(400, 625), scale=25, camera_height=1.5,
+                                 redraw_every=draw_every)
+    print(f"[bev] 重绘间隔 = {draw_every} 帧（1 = 每帧重绘）")
+
+    # 回调是否接受 risk_updated 参数（旧签名不带则退回原调用方式）
+    _cb_takes_updated = False
+    if callback is not None:
+        try:
+            import inspect as _inspect
+            _cb_params = _inspect.signature(callback).parameters
+            _cb_takes_updated = ("risk_updated" in _cb_params) or any(
+                p.kind == p.VAR_KEYWORD for p in _cb_params.values()
+            )
+        except (TypeError, ValueError):
+            _cb_takes_updated = False
     
     t0 = time.time()
 
@@ -815,7 +832,14 @@ def detect(save_img=False, callback=None):
             if view_img:
                 cv_show(str(p), im0, risk_img)
             if callback is not None:
-                callback(im0, risk_img, frame_idx=frame_idx, risk_sources=risk_sources, frame_risk=combined_risk)
+                # risk_updated=False 时表示 BEV 复用了上一帧图像，界面无需重复推送
+                if _cb_takes_updated:
+                    callback(im0, risk_img, frame_idx=frame_idx, risk_sources=risk_sources,
+                             frame_risk=combined_risk,
+                             risk_updated=bool(bev_visualizer.last_draw_was_fresh))
+                else:
+                    callback(im0, risk_img, frame_idx=frame_idx, risk_sources=risk_sources,
+                             frame_risk=combined_risk)
 
             # 保存结果
             if save_img:
@@ -883,6 +907,8 @@ if __name__ == '__main__':
     parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--draw-every', type=int, default=2,
+                        help='BEV 重绘间隔（帧）：1=每帧重绘，2=每 2 帧重绘一次并复用上一帧（默认）')
     parser.add_argument('--view-img', dest='view_img', action='store_true', help='display results')
     parser.add_argument('--no-view-img', dest='view_img', action='store_false', help='disable display results')
     # nosave=True：默认不写标注视频（如需保存显式加 --save）
