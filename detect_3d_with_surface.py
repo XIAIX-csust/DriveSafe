@@ -245,6 +245,7 @@ def detect(save_img=False, callback=None):
     depth_async = not getattr(opt, 'no_depth_async', False)
     depth_worker = DepthAsyncWorker(depth_estimator) if depth_async else None
     depth_seeded = False  # 首帧同步算出后 seed，避免与 worker 并发进 pipeline
+    surface_analysis = None  # 路面分析缓存：与主模型同节奏刷新，未刷新帧复用上一帧
     
     # 3D BBox Estimator (使用已加载的相机参数)
     if cam_params:
@@ -398,14 +399,18 @@ def detect(save_img=False, callback=None):
             curr_im0_depth,
             conf_thres=opt.road_conf_thres,
         )
-        surface_analysis = road_analyzer.analyze(
-            curr_im0_depth,
-            depth_map,
-            K,
-            road_main_results,
-            road_aux_results,
-            road_model_label,
-        )
+        # analyze() 与主模型同步降频：主模型本身已是每 2 帧一次（detector.frame_skip），
+        # 但掩码/几何后处理原先每帧都跑一遍 —— 现在只在主模型真正刷新的那帧重算，
+        # 其余帧复用上一帧结果（路面隐患变化慢，隔帧无感）。
+        if surface_analysis is None or getattr(road_detector, "last_run_fresh", True):
+            surface_analysis = road_analyzer.analyze(
+                curr_im0_depth,
+                depth_map,
+                K,
+                road_main_results,
+                road_aux_results,
+                road_model_label,
+            )
         # ============================
 
         # 处理检测结果

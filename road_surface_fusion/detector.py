@@ -69,6 +69,9 @@ class RoadSurfaceDetector:
         self.last_results: List = []
         self.last_aux_results: List = []
         self.last_model_label = "day"
+        # 本帧是否真的跑了推理（False = 走的缓存复用）。
+        # 供上层把 analyze() 等后处理按同样节奏降频，避免每帧白跑一遍掩码/几何。
+        self.last_run_fresh = False
         self.frame_skip = 2
         self.current_frame_count = 0
         # 裂缝模型变化慢，按更长间隔运行（每 aux_frame_skip 次主模型运行跑一次）
@@ -148,14 +151,18 @@ class RoadSurfaceDetector:
         skip_frame_check: bool = False,
     ) -> Tuple[List, List, str]:
         if image is None or image.size == 0:
+            self.last_run_fresh = False
             return [], [], self.last_model_label
 
         if not skip_frame_check and self.last_results:
             self.current_frame_count += 1
             if self.current_frame_count % self.frame_skip != 0:
+                # 未到推理周期：复用上一帧结果
+                self.last_run_fresh = False
                 return self.last_results, self.last_aux_results, self.last_model_label
 
         self.current_frame_count = 0
+        self.last_run_fresh = True
 
         if conf_thres is not None:
             for model in [self.day_model, self.night_model, self.auxiliary_model]:
